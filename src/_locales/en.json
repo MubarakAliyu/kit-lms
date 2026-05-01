@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "home": "Home",
+    "courses": "Courses",
+    "lessons": "Lessons",
+    "assignments": "Assignments",
+    "chat": "Chat",
+    "payments": "Payments",
+    "settings": "Settings",
+    "students": "Students",
+    "children": "Children",
+    "users": "Users",
+    "analytics": "Analytics"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search",
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "success": "Success",
+    "yes": "Yes",
+    "no": "No",
+    "back": "Back",
+    "next": "Next",
+    "close": "Close"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "forgot_password": "Forgot password?",
+    "reset_password": "Reset password",
+    "sign_in": "Sign in",
+    "sign_up": "Sign up",
+    "remember_me": "Remember me",
+    "welcome_back": "Welcome back"
+  },
+  "settings": {
+    "profile": "Profile",
+    "account": "Account",
+    "language": "Language",
+    "notifications": "Notifications",
+    "security": "Security",
+    "change_password": "Change password"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "no_notifications": "You're all caught up",
+    "mark_all_read": "Mark all as read",
+    "new": "New"
+  }
+}

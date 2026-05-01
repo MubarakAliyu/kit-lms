@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/* Tailwind v4: enable class-based dark mode (`dark:` variants apply when
+   <html> carries .dark, set by next-themes). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tells the browser which scheme to render native UI (scrollbars, form
+   controls) in BEFORE next-themes runs. Stops the light/dark flash. */
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+
+/* Light mode (default tokens). next-themes adds .dark to <html> when the
+   user picks dark mode; the overrides below take effect. */
+:root {
+  /* Surface tokens consumed via `bg-[var(--bg-...)]` etc. */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --text-primary: #0b1220;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border-color: #e5e7eb;
+  --sidebar-border: #e5e7eb;
+
+  /* Brand palette (theme-independent) */
+  --color-primary: #10b981;
+  --color-primary-dark: #059669;
+  --color-navy: #0b1220;
+  --color-surface: #ffffff;
+  --color-text: #e5e7eb;
+}
+
+.dark {
+  --bg-primary: #0b1220;
+  --bg-secondary: #111827;
+  --bg-card: #1a2234;
+  --bg-sidebar: #0f1729;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #1f2937;
+  --sidebar-border: #1f2937;
+}
+
+@theme inline {
+  /* Keep the legacy --background/--foreground keys (used by the older
+     bg-background/text-foreground utilities) wired to the active theme. */
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+
+  /* Typography — registered here so Tailwind generates the corresponding
+     utilities (font-sans, font-mono-ui, font-mono-code). The actual font
+     values are injected onto <html> by next/font/google in layout.js. */
+  --font-sans: var(--font-sans);
+  --font-mono-ui: var(--font-mono-ui);
+  --font-mono-code: var(--font-mono-code);
+
+  /* LMS palette — Tailwind utilities (bg-primary, text-navy, …) */
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-navy: var(--color-navy);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+}
+
+/* Base font assignments — `--font-sans`, `--font-mono-ui`, and
+   `--font-mono-code` resolve to the next/font/google CSS variables set on
+   the <html> element. */
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans), sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+h1, h2, h3, h4, h5, h6,
+p, span, div, label {
+  font-family: var(--font-sans), sans-serif;
+}
+
+button,
+nav a,
+[class*="badge"],
+[class*="tag"] {
+  font-family: var(--font-mono-ui), monospace;
+}
+
+code, pre,
+.code-block {
+  font-family: var(--font-mono-code), monospace;
+}
+
+/* Shimmer placeholder used by PageSkeleton */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    rgba(229, 231, 235, 0.6) 0%,
+    rgba(243, 244, 246, 1) 50%,
+    rgba(229, 231, 235, 0.6) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    rgba(31, 41, 55, 0.6) 0%,
+    rgba(55, 65, 81, 1) 50%,
+    rgba(31, 41, 55, 0.6) 100%
+  );
+}

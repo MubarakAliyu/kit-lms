@@ -1,0 +1,44 @@
+import { create } from "zustand";
+
+/**
+ * @typedef {import('@/_types/schema').Notification} Notification
+ * @typedef {import('@/_types/schema').NotificationType} NotificationType
+ *
+ * Known notification types (mirrors NotificationType in schema.js):
+ *   'lesson_published' | 'assignment_feedback' | 'quiz_result'
+ *   'course_complete' | 'new_course' | 'progress_milestone'
+ */
+export const useNotificationStore = create((set, get) => ({
+  notifications: [],
+  unreadCount: 0,
+
+  addNotification: (n) =>
+    set((s) => ({
+      notifications: [n, ...s.notifications],
+      unreadCount: s.unreadCount + (n.is_read ? 0 : 1),
+    })),
+
+  markAllRead: () =>
+    set({
+      unreadCount: 0,
+      notifications: get().notifications.map((n) => ({ ...n, is_read: true })),
+    }),
+
+  markOneRead: (id) =>
+    set((s) => {
+      const target = s.notifications.find((n) => n.id === id);
+      const wasUnread = target && !target.is_read;
+      return {
+        notifications: s.notifications.map((n) =>
+          n.id === id ? { ...n, is_read: true } : n
+        ),
+        unreadCount: wasUnread ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
+      };
+    }),
+
+  setNotifications: (list) =>
+    set({
+      notifications: list,
+      unreadCount: list.filter((n) => !n.is_read).length,
+    }),
+}));

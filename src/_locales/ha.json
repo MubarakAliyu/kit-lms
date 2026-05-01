@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "Dashbod",
+    "home": "Gida",
+    "courses": "Darussa",
+    "lessons": "Darasi",
+    "assignments": "Ayyuka",
+    "chat": "Hira",
+    "payments": "Biyan kuɗi",
+    "settings": "Saituna",
+    "students": "Ɗalibai",
+    "children": "Yara",
+    "users": "Masu amfani",
+    "analytics": "Bincike"
+  },
+  "common": {
+    "save": "Ajiye",
+    "cancel": "Soke",
+    "submit": "Aikawa",
+    "delete": "Share",
+    "edit": "Gyara",
+    "search": "Bincika",
+    "loading": "Ana lodawa…",
+    "error": "An samu matsala",
+    "success": "Ya yi nasara",
+    "yes": "Eh",
+    "no": "A'a",
+    "back": "Komawa",
+    "next": "Gaba",
+    "close": "Rufe"
+  },
+  "auth": {
+    "login": "Shiga",
+    "logout": "Fita",
+    "email": "Imel",
+    "password": "Kalmar sirri",
+    "forgot_password": "Ka manta kalmar sirri?",
+    "reset_password": "Sake saita kalmar sirri",
+    "sign_in": "Shiga",
+    "sign_up": "Yi rajista",
+    "remember_me": "Tuna ni",
+    "welcome_back": "Barka da dawowa"
+  },
+  "settings": {
+    "profile": "Bayanan kai",
+    "account": "Asusu",
+    "language": "Harshe",
+    "notifications": "Sanarwa",
+    "security": "Tsaro",
+    "change_password": "Canja kalmar sirri"
+  },
+  "notifications": {
+    "title": "Sanarwa",
+    "no_notifications": "Babu sabbin sanarwa",
+    "mark_all_read": "Yi alama duka a matsayin karantacce",
+    "new": "Sabuwa"
+  }
+}
