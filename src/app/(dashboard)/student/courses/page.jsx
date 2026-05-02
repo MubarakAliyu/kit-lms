@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { BookOpen, Search } from "lucide-react";
 import { getCourses } from "@/_lib/api/courses";
+import CourseThumbnail from "@/_components/ui/CourseThumbnail";
 
 const COURSE_GRADIENTS = {
   c1: "from-[#10B981] to-[#059669]",
@@ -68,8 +69,6 @@ export default function CoursesPage() {
 }
 
 function CourseCard({ course, index }) {
-  const gradient = gradientFor(course.id);
-  const initial = course.title.charAt(0).toUpperCase();
   const started = course.progress > 0;
 
   return (
@@ -80,11 +79,7 @@ function CourseCard({ course, index }) {
       whileHover={{ y: -4 }}
       className="group flex flex-col overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-sm transition-shadow hover:shadow-lg"
     >
-      <div
-        className={`relative grid h-32 place-items-center bg-gradient-to-br ${gradient}`}
-      >
-        <span className="text-6xl font-bold text-white drop-shadow">{initial}</span>
-      </div>
+      <CourseThumbnail course={course} size="md" />
 
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-start justify-between gap-3">

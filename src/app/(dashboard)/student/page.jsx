@@ -26,6 +26,7 @@ import { getAssignments } from "@/_lib/api/assignments";
 import { getNotifications } from "@/_lib/api/notifications";
 import { useNotificationStore } from "@/_store/notificationStore";
 import { useCountUp } from "@/_hooks/useCountUp";
+import { notifyAdmin } from "@/_lib/notifications/adminNotify";
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -88,6 +89,7 @@ export default function StudentDashboardHome() {
         description: `Logged in as ${fullName}`,
         duration: 3000,
       });
+      notifyAdmin("student_login", { name: fullName });
     }
   }, [session]);
 

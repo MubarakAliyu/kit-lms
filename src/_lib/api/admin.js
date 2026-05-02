@@ -49,3 +49,12 @@ export const unpublishCourse = (id) =>
 
 export const sendAnnouncement = (data) =>
   apiClient.post("/admin/notifications/send", data).then((r) => r.data);
+
+export const getActivityLog = () =>
+  apiClient.get("/admin/activity-log").then((r) => r.data);
+
+export const savePermissions = (data) =>
+  apiClient.post("/admin/permissions", data).then((r) => r.data);
+
+export const getCourseEditor = (id) =>
+  apiClient.get(`/admin/courses/${id}/editor`).then((r) => r.data);

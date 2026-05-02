@@ -7,7 +7,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { useSession } from "next-auth/react";
 import { addChild } from "@/_lib/api/parents";
+import { notifyAdmin } from "@/_lib/notifications/adminNotify";
 
 const TRACKS = ["Scratch Programming", "Web Development", "Robotics Basics"];
 
@@ -20,6 +22,7 @@ const schema = z.object({
 });
 
 export default function AddChildModal({ isOpen, onClose, onCreated }) {
+  const { data: session } = useSession();
   const {
     register,
     handleSubmit,
@@ -44,6 +47,11 @@ export default function AddChildModal({ isOpen, onClose, onCreated }) {
     try {
       const created = await addChild(values);
       toast.success("Child profile created! 👶");
+      notifyAdmin("child_registered", {
+        parent_name: session?.user?.name ?? "Parent",
+        child_name: values.name,
+        track: values.programme_track,
+      });
       onCreated?.(created);
       onClose?.();
     } catch {

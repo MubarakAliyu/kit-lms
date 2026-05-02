@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { useSession } from "next-auth/react";
 import { Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { getChildren } from "@/_lib/api/parents";
 import { initiatePayment, verifyPayment } from "@/_lib/api/payments";
+import { notifyAdmin } from "@/_lib/notifications/adminNotify";
 
 const COURSE_OPTIONS = [
   { id: "c1", title: "Scratch Programming", price: 15000 },
@@ -18,6 +20,7 @@ function formatNaira(amount) {
 }
 
 export default function PaystackModal({ isOpen, onClose, onSuccess }) {
+  const { data: session } = useSession();
   const [children, setChildren] = useState([]);
   const [childId, setChildId] = useState("");
   const [courseId, setCourseId] = useState("");
@@ -60,6 +63,11 @@ export default function PaystackModal({ isOpen, onClose, onSuccess }) {
       setReference(verified.reference);
       setStage("success");
       toast.success("Payment confirmed!");
+      notifyAdmin("payment_made", {
+        parent_name: session?.user?.name ?? "Parent",
+        amount: selectedCourse.price,
+        course_title: selectedCourse.title,
+      });
       onSuccess?.({
         reference: verified.reference,
         student_id: selectedChild.id,

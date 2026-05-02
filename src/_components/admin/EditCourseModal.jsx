@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Upload, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { createCourse } from "@/_lib/api/admin";
-import CourseThumbnail from "@/_components/ui/CourseThumbnail";
+import { updateCourse } from "@/_lib/api/admin";
+import { ThumbnailField } from "@/_components/admin/CreateCourseModal";
 
 const PAYMENT_TYPES = ["subscription", "one_time"];
 
@@ -20,11 +20,12 @@ const schema = z.object({
   instructor_id: z.string().trim().min(1, "Pick an instructor"),
 });
 
-export default function CreateCourseModal({
+export default function EditCourseModal({
   isOpen,
   onClose,
+  course,
   instructors,
-  onCreated,
+  onUpdated,
 }) {
   const {
     register,
@@ -32,36 +33,27 @@ export default function CreateCourseModal({
     reset,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      title: "",
-      description: "",
-      price: 0,
-      payment_type: "subscription",
-      instructor_id: "",
-    },
-  });
+  } = useForm({ resolver: zodResolver(schema) });
 
   const [thumbnailPreview, setThumbnailPreview] = useState(null);
   const watchedTitle = watch("title");
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !course) return;
     reset({
-      title: "",
-      description: "",
-      price: 0,
-      payment_type: "subscription",
-      instructor_id: "",
+      title: course.title ?? "",
+      description: course.description ?? "",
+      price: course.price ?? 0,
+      payment_type: course.payment_type ?? "subscription",
+      instructor_id: course.instructor_id ?? "",
     });
-    setThumbnailPreview(null);
+    setThumbnailPreview(course.thumbnail_url ?? null);
     const onKey = (e) => {
       if (e.key === "Escape") onClose?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose, reset]);
+  }, [isOpen, course, onClose, reset]);
 
   function handleThumbnailFile(e) {
     const file = e.target.files?.[0];
@@ -76,24 +68,30 @@ export default function CreateCourseModal({
   }
 
   async function onSubmit(values) {
+    if (!course) return;
     const instructor = instructors.find((i) => i.id === values.instructor_id);
     try {
-      const created = await createCourse({
+      await updateCourse(course.id, {
         ...values,
-        instructor_name: instructor?.name,
+        instructor_name: instructor?.name ?? course.instructor_name,
         thumbnail_url: thumbnailPreview,
       });
-      toast.success("Course created! Draft saved.");
-      onCreated?.(created);
+      toast.success("Course updated! ✓");
+      onUpdated?.({
+        ...course,
+        ...values,
+        instructor_name: instructor?.name ?? course.instructor_name,
+        thumbnail_url: thumbnailPreview,
+      });
       onClose?.();
     } catch {
-      toast.error("Couldn't create course");
+      toast.error("Couldn't update course");
     }
   }
 
   return (
     <AnimatePresence>
-      {isOpen && (
+      {isOpen && course && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -103,7 +101,7 @@ export default function CreateCourseModal({
           className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
-          aria-label="Create course"
+          aria-label="Edit course"
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -115,7 +113,7 @@ export default function CreateCourseModal({
           >
             <header className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-5 py-4">
               <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                Create Course
+                Edit Course
               </h2>
               <button
                 type="button"
@@ -132,25 +130,23 @@ export default function CreateCourseModal({
               noValidate
               className="flex flex-col gap-4 overflow-y-auto px-5 py-5"
             >
-              <Field id="cc-title" label="Title" error={errors.title?.message}>
+              <Field id="ec-title" label="Title" error={errors.title?.message}>
                 <input
-                  id="cc-title"
+                  id="ec-title"
                   type="text"
-                  placeholder="e.g. Scratch Programming"
                   {...register("title")}
                   className={inputClass(errors.title)}
                 />
               </Field>
 
               <Field
-                id="cc-desc"
+                id="ec-desc"
                 label="Description"
                 error={errors.description?.message}
               >
                 <textarea
-                  id="cc-desc"
+                  id="ec-desc"
                   rows={3}
-                  placeholder="One-paragraph summary…"
                   {...register("description")}
                   className={inputClass(errors.description)}
                 />
@@ -158,14 +154,15 @@ export default function CreateCourseModal({
 
               <ThumbnailField
                 preview={thumbnailPreview}
-                title={watchedTitle}
+                title={watchedTitle ?? course?.title}
+                courseId={course?.id}
                 onFile={handleThumbnailFile}
                 onClear={() => setThumbnailPreview(null)}
               />
 
-              <Field id="cc-price" label="Price (₦)" error={errors.price?.message}>
+              <Field id="ec-price" label="Price (₦)" error={errors.price?.message}>
                 <input
-                  id="cc-price"
+                  id="ec-price"
                   type="number"
                   min={0}
                   {...register("price")}
@@ -174,12 +171,12 @@ export default function CreateCourseModal({
               </Field>
 
               <Field
-                id="cc-payment"
+                id="ec-payment"
                 label="Payment Type"
                 error={errors.payment_type?.message}
               >
                 <select
-                  id="cc-payment"
+                  id="ec-payment"
                   {...register("payment_type")}
                   className={inputClass(errors.payment_type)}
                 >
@@ -189,13 +186,12 @@ export default function CreateCourseModal({
               </Field>
 
               <Field
-                id="cc-instructor"
+                id="ec-instructor"
                 label="Instructor"
                 error={errors.instructor_id?.message}
               >
                 <select
-                  id="cc-instructor"
-                  defaultValue=""
+                  id="ec-instructor"
                   {...register("instructor_id")}
                   className={inputClass(errors.instructor_id)}
                 >
@@ -226,7 +222,7 @@ export default function CreateCourseModal({
                   className="inline-flex items-center gap-2 rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#059669] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Create Course
+                  Save Changes
                 </motion.button>
               </div>
             </form>
@@ -257,42 +253,4 @@ function inputClass(err) {
       ? "border-red-300 focus:border-red-400 focus:ring-red-100"
       : "border-[var(--border-color)] focus:border-[#10B981] focus:ring-[#10B981]/20"
   }`;
-}
-
-// Reusable thumbnail picker. Uses a blob: URL for the preview (no upload yet
-// — backend integration is TODO). Pulls in CourseThumbnail so the preview
-// matches what the dashboards will render.
-export function ThumbnailField({ preview, title, courseId, onFile, onClear }) {
-  const previewCourse = { id: courseId, title, thumbnail_url: preview };
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-semibold text-[var(--text-primary)]">
-        Course Thumbnail
-      </label>
-      <div className="overflow-hidden rounded-xl bg-[var(--bg-secondary)]">
-        <CourseThumbnail course={previewCourse} size="md" />
-      </div>
-      <label className="group flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--border-color)] p-3 transition-colors hover:border-[#10B981]">
-        <Upload className="h-4 w-4 text-[var(--text-secondary)] group-hover:text-[#10B981]" />
-        <span className="text-sm text-[var(--text-secondary)] group-hover:text-[#10B981]">
-          Upload thumbnail image
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={onFile}
-        />
-      </label>
-      {preview && (
-        <button
-          type="button"
-          onClick={onClear}
-          className="self-start text-xs font-semibold text-red-400 transition-colors hover:text-red-500"
-        >
-          Remove thumbnail (use initial)
-        </button>
-      )}
-    </div>
-  );
 }

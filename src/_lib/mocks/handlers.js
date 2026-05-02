@@ -37,11 +37,16 @@ const DYNAMIC_ADMIN_NOTIFICATIONS = [];
 const DYNAMIC_PARENT_NOTIFICATIONS = [];
 
 const MOCK_CREDENTIALS = [
-  { id: "user-admin-001", email: "admin@kidsintech.school", password: "KIT@admin2025", role: "admin", name: "Admin User" },
-  { id: "user-instructor-001", email: "instructor@kidsintech.school", password: "KIT@teach2025", role: "instructor", name: "Ms. Sarah Aliyu" },
-  { id: "user-student-001", email: "student@kidsintech.school", password: "KIT@learn2025", role: "student", name: "Liam Hassan" },
-  { id: "user-parent-001", email: "parent@kidsintech.school", password: "KIT@parent2025", role: "parent", name: "Mrs. Fatima Hassan" },
+  { id: "u1", email: "admin@kidsintech.school", password: "KIT@admin2025", role: "admin", name: "Admin User" },
+  { id: "u2", email: "instructor@kidsintech.school", password: "KIT@teach2025", role: "instructor", name: "Ms. Sarah Aliyu" },
+  { id: "u5", email: "student@kidsintech.school", password: "KIT@learn2025", role: "student", name: "Liam Hassan" },
+  { id: "u4", email: "parent@kidsintech.school", password: "KIT@parent2025", role: "parent", name: "Mrs. Fatima Hassan" },
 ];
+
+// Users created at runtime by the admin (POST /admin/users). Lives next to
+// FORCE_RESET_EMAILS so we can resolve `must_reset_password` logins for
+// emails that aren't in MOCK_CREDENTIALS.
+const ADMIN_CREATED_USERS = [];
 
 const STUDENT_ME = {
   id: "s1",
@@ -485,6 +490,7 @@ const INSTRUCTOR_COURSES = [
     modules_count: 3,
     completion_rate: 72,
     is_published: true,
+    thumbnail_url: null,
   },
   {
     id: "c2",
@@ -498,6 +504,7 @@ const INSTRUCTOR_COURSES = [
     modules_count: 4,
     completion_rate: 30,
     is_published: true,
+    thumbnail_url: null,
   },
 ];
 
@@ -779,9 +786,9 @@ const ADMIN_USERS = [
 ];
 
 const ADMIN_COURSES = [
-  { id: "c1", title: "Scratch Programming", description: "Visual programming for beginners", price: 15000, payment_type: "subscription", instructor_id: "i1", instructor_name: "Ms. Sarah Aliyu", students_count: 2, modules_count: 3, is_published: true, completion_rate: 72, revenue: 45000, created_at: "2024-01-20T00:00:00Z" },
-  { id: "c2", title: "Web Development", description: "HTML CSS JavaScript basics", price: 20000, payment_type: "one_time", instructor_id: "i1", instructor_name: "Ms. Sarah Aliyu", students_count: 1, modules_count: 4, is_published: true, completion_rate: 30, revenue: 20000, created_at: "2024-02-10T00:00:00Z" },
-  { id: "c3", title: "Robotics Basics", description: "Introduction to robotics", price: 25000, payment_type: "subscription", instructor_id: "u3", instructor_name: "Mr. Ahmed Bello", students_count: 0, modules_count: 6, is_published: false, completion_rate: 0, revenue: 0, created_at: "2024-03-01T00:00:00Z" },
+  { id: "c1", title: "Scratch Programming", description: "Visual programming for beginners", price: 15000, payment_type: "subscription", instructor_id: "i1", instructor_name: "Ms. Sarah Aliyu", students_count: 2, modules_count: 3, is_published: true, completion_rate: 72, revenue: 45000, thumbnail_url: null, created_at: "2024-01-20T00:00:00Z" },
+  { id: "c2", title: "Web Development", description: "HTML CSS JavaScript basics", price: 20000, payment_type: "one_time", instructor_id: "i1", instructor_name: "Ms. Sarah Aliyu", students_count: 1, modules_count: 4, is_published: true, completion_rate: 30, revenue: 20000, thumbnail_url: null, created_at: "2024-02-10T00:00:00Z" },
+  { id: "c3", title: "Robotics Basics", description: "Introduction to robotics", price: 25000, payment_type: "subscription", instructor_id: "u3", instructor_name: "Mr. Ahmed Bello", students_count: 0, modules_count: 6, is_published: false, completion_rate: 0, revenue: 0, thumbnail_url: null, created_at: "2024-03-01T00:00:00Z" },
 ];
 
 const ADMIN_ANALYTICS = {
@@ -824,6 +831,14 @@ const ADMIN_PAYMENTS = [
   { id: "pay4", parent_id: "p1", parent_name: "Mrs. Fatima Hassan", student_id: "s1", student_name: "Liam Hassan", amount: 25000, type: "subscription", status: "pending", paystack_ref: "PSK_456789", course_title: "Robotics Basics", created_at: "2025-04-20T00:00:00Z" },
 ];
 
+const ADMIN_ACTIVITY_LOG = [
+  { id: "log1", user_name: "Admin User", user_role: "admin", action: "created_user", description: "Created instructor account for Ms. Sarah Aliyu", ip: "192.168.1.1", timestamp: "2025-04-27T10:00:00Z" },
+  { id: "log2", user_name: "Admin User", user_role: "admin", action: "deactivated_user", description: "Deactivated student account: Emeka Obi", ip: "192.168.1.1", timestamp: "2025-04-26T14:00:00Z" },
+  { id: "log3", user_name: "Admin User", user_role: "admin", action: "published_course", description: "Published course: Web Development", ip: "192.168.1.1", timestamp: "2025-04-25T09:00:00Z" },
+  { id: "log4", user_name: "Admin User", user_role: "admin", action: "sent_announcement", description: "Sent announcement to all 7 users", ip: "192.168.1.1", timestamp: "2025-04-24T11:00:00Z" },
+  { id: "log5", user_name: "Admin User", user_role: "admin", action: "updated_permissions", description: "Updated role permissions for admin account", ip: "192.168.1.1", timestamp: "2025-04-23T08:00:00Z" },
+];
+
 const ADMIN_NOTIFICATIONS_SEED = [
   {
     id: "an1",
@@ -862,44 +877,60 @@ export const handlers = [
   http.post("*/login", async ({ request }) => {
     const { email, password } = await request.json();
 
-    // First-login flow for admin-created accounts: anyone in the force-reset
+    // First-login flow for admin-created accounts. Anyone in the force-reset
     // set who supplies the default password gets a temp_token instead of a
-    // real session. NextAuth surfaces the flag through the JWT callback so
-    // the dashboard layout can redirect to /force-reset-password.
+    // real session. NextAuth's authorize() surfaces the flag through the JWT
+    // callback so DashboardLayout's ForceResetGuard redirects them.
     if (
       FORCE_RESET_EMAILS.has(email) &&
       password === DEFAULT_NEW_USER_PASSWORD
     ) {
-      const created = ADMIN_USERS.find((u) => u.email === email);
-      return HttpResponse.json({
-        must_reset_password: true,
-        temp_token: `temp_${email}`,
-        user: {
-          id: created?.id ?? "temp",
-          email,
-          role: created?.role ?? "student",
-          name: created?.name ?? email.split("@")[0],
-          language_preference: "en",
-        },
-      });
+      const created =
+        ADMIN_CREATED_USERS.find((u) => u.email === email) ??
+        ADMIN_USERS.find((u) => u.email === email);
+      if (created) {
+        return HttpResponse.json(
+          {
+            must_reset_password: true,
+            temp_token: `temp_${email}`,
+            user: {
+              id: created.id,
+              email: created.email,
+              role: created.role,
+              name: created.name,
+              language_preference: "en",
+            },
+          },
+          { status: 200 }
+        );
+      }
     }
 
+    // Normal credential check.
     const match = MOCK_CREDENTIALS.find(
       (c) => c.email === email && c.password === password
     );
-    if (!match) {
-      return HttpResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    if (match) {
+      return HttpResponse.json(
+        {
+          user: {
+            id: match.id,
+            email: match.email,
+            role: match.role,
+            name: match.name,
+            language_preference: "en",
+            must_reset_password: false,
+          },
+          token: `mock-jwt-${match.role}`,
+        },
+        { status: 200 }
+      );
     }
-    return HttpResponse.json({
-      user: {
-        id: match.id,
-        role: match.role,
-        email: match.email,
-        name: match.name,
-        language_preference: "en",
-      },
-      token: "mock-jwt-token",
-    });
+
+    return HttpResponse.json(
+      { error: "Invalid credentials" },
+      { status: 401 }
+    );
   }),
 
   http.post("*/forgot-password", async () => HttpResponse.json({ ok: true })),
@@ -1114,12 +1145,36 @@ export const handlers = [
   // ── Settings (stub) ─────────────────────────────────────────────────────
   http.post("*/user/change-password", async ({ request }) => {
     const body = await request.json().catch(() => ({}));
-    // Force-reset flow: when the request carries a temp_token, derive the
-    // email from it and drop the user out of the FORCE_RESET_EMAILS set so
-    // their next login follows the normal path.
-    if (body?.temp_token && typeof body.temp_token === "string") {
-      const email = body.temp_token.replace(/^temp_/, "");
+    // Force-reset flow: when the request carries a temp_token (or a generic
+    // `token` whose value starts with "temp_"), derive the email from it,
+    // drop them out of FORCE_RESET_EMAILS, and flip the must_reset_password
+    // flag on the matching ADMIN_CREATED_USERS row + their MOCK_CREDENTIALS
+    // entry so the next login follows the normal path.
+    const rawToken = body?.temp_token ?? body?.token;
+    if (typeof rawToken === "string" && rawToken.startsWith("temp_")) {
+      const email = rawToken.replace(/^temp_/, "");
       FORCE_RESET_EMAILS.delete(email);
+      const created = ADMIN_CREATED_USERS.find((u) => u.email === email);
+      if (created) created.must_reset_password = false;
+      const mirror = ADMIN_USERS.find((u) => u.email === email);
+      if (mirror) mirror.must_reset_password = false;
+      // Register a credential row so the next login with the new password
+      // resolves through the normal MOCK_CREDENTIALS branch.
+      if (created && body.new_password) {
+        const existing = MOCK_CREDENTIALS.find((c) => c.email === email);
+        if (existing) {
+          existing.password = body.new_password;
+        } else {
+          MOCK_CREDENTIALS.push({
+            id: created.id,
+            email: created.email,
+            password: body.new_password,
+            role: created.role,
+            name: created.name,
+          });
+        }
+      }
+      return HttpResponse.json({ success: true });
     }
     return HttpResponse.json({ ok: true });
   }),
@@ -1187,6 +1242,35 @@ export const handlers = [
     HttpResponse.json(PENDING_ENROLLMENTS)
   ),
 
+  http.get("*/admin/activity-log", () =>
+    HttpResponse.json(ADMIN_ACTIVITY_LOG)
+  ),
+
+  http.post("*/admin/permissions", async () =>
+    HttpResponse.json({ success: true })
+  ),
+
+  // Admin course editor — returns the same shape instructor sees, including
+  // joined modules + lessons + assignments. The admin editor reuses the
+  // existing instructor catalogs.
+  http.get("*/admin/courses/:id/editor", ({ params }) => {
+    const course = ADMIN_COURSES.find((c) => c.id === params.id);
+    const modules = INSTRUCTOR_COURSE_MODULES[params.id] ?? [];
+    const lessonsByModule = {};
+    for (const m of modules) {
+      lessonsByModule[m.id] = INSTRUCTOR_MODULE_LESSONS[m.id] ?? [];
+    }
+    const assignments = INSTRUCTOR_ASSIGNMENTS.filter(
+      (a) => a.course_id === params.id
+    );
+    return HttpResponse.json({
+      course: course ?? null,
+      modules,
+      lessons_by_module: lessonsByModule,
+      assignments,
+    });
+  }),
+
   // Admin authoring — provisions a real account from a pending enrollment.
   // The new user is added to ADMIN_USERS and put in FORCE_RESET_EMAILS so
   // their first login lands on /force-reset-password. If a pending_id is
@@ -1208,6 +1292,7 @@ export const handlers = [
       must_reset_password: true,
     };
     ADMIN_USERS.push(newUser);
+    ADMIN_CREATED_USERS.push(newUser);
     if (newUser.email) FORCE_RESET_EMAILS.add(newUser.email);
 
     // Drain the matching pending enrollment + emit a parent notification so

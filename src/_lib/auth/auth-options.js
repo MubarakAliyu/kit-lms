@@ -25,26 +25,30 @@ const providers = [
         // bounce them to /force-reset-password before any dashboard UI loads.
         if (result?.must_reset_password) {
           return {
-            id: result.user?.id ?? "temp",
-            email: result.user?.email,
+            id: result.user?.id ?? `temp_${credentials.email}`,
+            email: result.user?.email ?? credentials.email,
             name: result.user?.name,
             role: result.user?.role,
+            language_preference: "en",
             must_reset_password: true,
             temp_token: result.temp_token,
           };
         }
 
-        const { user, token } = result;
-        if (!user?.id || !user?.role) return null;
+        // Normal login.
+        if (result?.user && result?.token) {
+          return {
+            id: result.user.id,
+            email: result.user.email,
+            name: result.user.name,
+            role: result.user.role,
+            language_preference: result.user.language_preference || "en",
+            must_reset_password: false,
+            accessToken: result.token,
+          };
+        }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          language_preference: user.language_preference,
-          accessToken: token,
-        };
+        return null;
       } catch {
         return null;
       }

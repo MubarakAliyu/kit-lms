@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { getInstructorCourses } from "@/_lib/api/instructor";
 import { getCourseModules } from "@/_lib/api/courses";
 import { apiClient } from "@/_lib/api/client";
+import CourseThumbnail from "@/_components/ui/CourseThumbnail";
 import AddModuleModal from "@/_components/instructor/AddModuleModal";
 import AddLessonModal from "@/_components/instructor/AddLessonModal";
 import AddQuizModal from "@/_components/instructor/AddQuizModal";
@@ -119,11 +120,15 @@ function CourseSection({ course, onAddModule }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]">
       <header className="flex flex-col gap-3 border-b border-[var(--border-color)] p-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">
-              {course.title}
-            </h2>
+        <div className="flex min-w-0 items-start gap-4">
+          <div className="shrink-0 overflow-hidden rounded-xl">
+            <CourseThumbnail course={course} size="sm" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                {course.title}
+              </h2>
             {course.is_published && (
               <span
                 className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
@@ -143,6 +148,7 @@ function CourseSection({ course, onAddModule }) {
             <Users className="h-3.5 w-3.5" />
             {course.students_count} enrolled
           </p>
+          </div>
         </div>
         <button
           type="button"

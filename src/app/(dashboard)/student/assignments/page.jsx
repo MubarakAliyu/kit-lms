@@ -14,6 +14,8 @@ import {
   X,
 } from "lucide-react";
 import { getAssignments, submitAssignment } from "@/_lib/api/assignments";
+import { notifyAdmin } from "@/_lib/notifications/adminNotify";
+import { useSession } from "next-auth/react";
 
 const TABS = [
   { key: "pending", label: "Pending" },
@@ -239,6 +241,7 @@ const GRADE_TONE = {
 };
 
 function AssignmentDetailModal({ assignment, onClose, onSubmitted }) {
+  const { data: session } = useSession();
   // Editing flag controls whether the submission preview or the submit form
   // is rendered. Submitted/reviewed assignments default to preview; pending
   // ones default to the form.
@@ -276,6 +279,10 @@ function AssignmentDetailModal({ assignment, onClose, onSubmitted }) {
         content,
       });
       toast.success("Assignment submitted! ✓");
+      notifyAdmin("assignment_submitted", {
+        student_name: session?.user?.name ?? "Student",
+        assignment_title: assignment.title,
+      });
       onSubmitted?.(assignment.id, { submission_type: type, content });
       setEditing(false);
     } catch {
