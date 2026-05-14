@@ -12,8 +12,12 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { roleToPath } from "@/_lib/auth/role-routing";
 
+const ADMISSION_REGEX = /^KIT\/\d{2}\/\d{3}$/i;
+
 const schema = z.object({
-  email: z.string().min(1, "Email is required").email("Please enter a valid email"),
+  identifier: z
+    .string()
+    .min(1, "Please enter your email or admission number"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -25,24 +29,30 @@ export default function LoginForm() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(schema), mode: "onTouched" });
+  } = useForm({
+    resolver: zodResolver(schema),
+    mode: "onTouched",
+    defaultValues: { identifier: "", password: "" },
+  });
 
   const onSubmit = async (values) => {
+    const raw = values.identifier.trim();
+    // Auto-detect: admission numbers get uppercased so the backend
+    // match is case-insensitive on the wire.
+    const identifier = ADMISSION_REGEX.test(raw) ? raw.toUpperCase() : raw;
+
     const res = await signIn("credentials", {
-      email: values.email,
+      identifier,
       password: values.password,
       redirect: false,
     });
 
     if (!res?.ok) {
-      toast.error("Invalid email or password");
+      toast.error("Invalid email, admission number, or password");
       return;
     }
 
     const session = await getSession();
-    // Admin-created users on first login carry must_reset_password — bypass
-    // the role landing page and go straight to /force-reset-password so we
-    // don't briefly flash the dashboard before the guard redirects.
     if (session?.user?.must_reset_password) {
       router.push("/force-reset-password");
       router.refresh();
@@ -53,25 +63,44 @@ export default function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+    <motion.form
+      onSubmit={handleSubmit(onSubmit)}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="flex flex-col gap-4"
+      noValidate
+    >
       <FieldShell delay={0}>
-        <label htmlFor="email" className="text-sm font-semibold text-[#0B1220]">
-          Email address
+        <label
+          htmlFor="identifier"
+          className="text-sm font-semibold text-[#0B1220]"
+        >
+          Email or Admission Number
         </label>
         <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@kidsintech.school"
-          aria-invalid={!!errors.email}
-          {...register("email")}
-          className={inputClass(errors.email)}
+          id="identifier"
+          type="text"
+          autoComplete="username"
+          placeholder="you@kidsintech.school or KIT/26/001"
+          aria-invalid={!!errors.identifier}
+          {...register("identifier")}
+          className={inputClass(errors.identifier)}
         />
-        {errors.email && <FieldError>{errors.email.message}</FieldError>}
+        {errors.identifier ? (
+          <FieldError>{errors.identifier.message}</FieldError>
+        ) : (
+          <span className="text-[11px] font-medium text-gray-500">
+            Students: use your admission number (e.g. KIT/26/001)
+          </span>
+        )}
       </FieldShell>
 
       <FieldShell delay={0.1}>
-        <label htmlFor="password" className="text-sm font-semibold text-[#0B1220]">
+        <label
+          htmlFor="password"
+          className="text-sm font-semibold text-[#0B1220]"
+        >
           Password
         </label>
         <div className="relative">
@@ -90,7 +119,11 @@ export default function LoginForm() {
             aria-label={showPassword ? "Hide password" : "Show password"}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600"
           >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showPassword ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
         {errors.password && <FieldError>{errors.password.message}</FieldError>}
@@ -123,7 +156,7 @@ export default function LoginForm() {
         {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {isSubmitting ? "Signing in…" : "Sign In"}
       </motion.button>
-    </form>
+    </motion.form>
   );
 }
 

@@ -10,6 +10,7 @@ import {
   BookOpen,
   CheckCircle,
   CreditCard,
+  MessageSquare,
   UserCheck,
   UserPlus,
   Users,
@@ -31,6 +32,7 @@ const TYPE_META = {
   student_login: { icon: UserCheck, color: "#3B82F6" },
   assignment_submitted: { icon: BookOpen, color: "#F59E0B" },
   quiz_completed: { icon: CheckCircle, color: "#10B981" },
+  new_message: { icon: MessageSquare, color: "#3B82F6" },
 };
 
 const TABS = [
@@ -38,6 +40,7 @@ const TABS = [
   { key: "unread", label: "Unread" },
   { key: "enrollments", label: "Enrollments" },
   { key: "payments", label: "Payments" },
+  { key: "messages", label: "Messages" },
   { key: "system", label: "System" },
 ];
 
@@ -49,6 +52,7 @@ const TAB_FILTERS = {
     n.type === "child_registered" ||
     n.type === "account_created",
   payments: (n) => n.type === "payment_received" || n.type === "payment_made",
+  messages: (n) => n.type === "new_message",
   system: (n) => n.type === "course_created" || n.type === "user_joined",
 };
 

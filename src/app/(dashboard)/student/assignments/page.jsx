@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { differenceInDays, format } from "date-fns";
 import { toast } from "sonner";
 import {
+  ChevronDown,
+  ClipboardCheck,
   ExternalLink,
   FileText,
   Link as LinkIcon,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import { getAssignments, submitAssignment } from "@/_lib/api/assignments";
 import { notifyAdmin } from "@/_lib/notifications/adminNotify";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 import { useSession } from "next-auth/react";
 
 const TABS = [
@@ -101,6 +104,17 @@ export default function AssignmentsPage() {
         <ListSkeleton />
       ) : visible.length === 0 ? (
         <EmptyTab tab={activeTab} />
+      ) : activeTab === "reviewed" ? (
+        <ul className="grid gap-4">
+          {visible.map((a, i) => (
+            <ReviewedAssignmentCard
+              key={a.id}
+              item={a}
+              index={i}
+              onView={() => setOpenId(a.id)}
+            />
+          ))}
+        </ul>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {visible.map((a, i) => (
@@ -205,6 +219,125 @@ function AssignmentCard({ item, index, onView }) {
   );
 }
 
+function ReviewedAssignmentCard({ item, index, onView }) {
+  // Prominent reviewed card. Surfaces grade + instructor feedback up front
+  // so the student doesn't need to dig into the detail modal to find them.
+  const tone = GRADE_TONE[item.grade] ?? GRADE_TONE.B;
+  const [showSubmission, setShowSubmission] = useState(false);
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.06 }}
+      className="overflow-hidden rounded-2xl border border-[var(--border-color)] border-l-4 border-l-[#10B981] bg-[var(--bg-card)]"
+    >
+      <header className="flex flex-col gap-2 px-5 pb-3 pt-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <StatusBadge status="reviewed" />
+            <span className="rounded-full bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] font-mono-ui">
+              Module {item.module_id}
+            </span>
+          </div>
+          <h2 className="mt-2 text-lg font-bold text-[var(--text-primary)]">
+            {item.title}
+          </h2>
+        </div>
+      </header>
+
+      <section className="mx-5 mb-4 rounded-xl border border-[#10B981]/20 bg-[#10B981]/5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            Instructor Feedback
+          </p>
+          {item.grade && (
+            <span
+              className="grid place-items-center rounded-2xl px-4 py-2 text-4xl font-bold font-mono-ui"
+              style={{ color: tone.color, backgroundColor: tone.bg }}
+            >
+              {item.grade}
+            </span>
+          )}
+        </div>
+
+        <blockquote className="mt-3 rounded-lg border-l-4 border-[#10B981] bg-[var(--bg-secondary)] p-4 text-sm italic leading-relaxed text-[var(--text-primary)]">
+          <p className="mb-1 text-xs font-semibold not-italic text-[var(--text-muted)] font-mono-ui">
+            Your instructor wrote:
+          </p>
+          {item.feedback || "No feedback provided."}
+        </blockquote>
+
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--text-muted)] font-mono-ui">
+          {item.reviewed_at && (
+            <span>
+              Reviewed on {format(new Date(item.reviewed_at), "MMM d, yyyy")}
+            </span>
+          )}
+          {item.reviewer_name && <span>· by {item.reviewer_name}</span>}
+        </div>
+      </section>
+
+      {item.submission_type && item.submission_content && (
+        <section className="mx-5 mb-4">
+          <button
+            type="button"
+            onClick={() => setShowSubmission((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#10B981] underline transition-colors hover:text-[#059669] font-mono-ui"
+          >
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${
+                showSubmission ? "rotate-180" : ""
+              }`}
+            />
+            {showSubmission ? "Hide your submission" : "View your submission"}
+          </button>
+          <AnimatePresence>
+            {showSubmission && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
+                  {item.submission_type === "link" ? (
+                    <a
+                      href={item.submission_content}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 text-sm font-semibold text-[#3B82F6] underline hover:no-underline"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      <span className="break-all">{item.submission_content}</span>
+                    </a>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm text-[var(--text-primary)]">
+                      {item.submission_content}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+      )}
+
+      <footer className="border-t border-[var(--border-color)] px-5 py-3">
+        <button
+          type="button"
+          onClick={onView}
+          className="w-full rounded-xl border border-[var(--border-color)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
+        >
+          View Full Assignment
+        </button>
+      </footer>
+    </motion.li>
+  );
+}
+
 function EmptyTab({ tab }) {
   return (
     <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-10 text-center">
@@ -242,6 +375,7 @@ const GRADE_TONE = {
 
 function AssignmentDetailModal({ assignment, onClose, onSubmitted }) {
   const { data: session } = useSession();
+  const { notify } = useLiveNotify();
   // Editing flag controls whether the submission preview or the submit form
   // is rendered. Submitted/reviewed assignments default to preview; pending
   // ones default to the form.
@@ -278,7 +412,10 @@ function AssignmentDetailModal({ assignment, onClose, onSubmitted }) {
         submission_type: type,
         content,
       });
-      toast.success("Assignment submitted! ✓");
+      notify("assignment_submitted", {
+        student: session?.user?.name ?? "Student",
+        title: assignment.title,
+      });
       notifyAdmin("assignment_submitted", {
         student_name: session?.user?.name ?? "Student",
         assignment_title: assignment.title,
@@ -528,9 +665,16 @@ function ReviewFeedback({ assignment }) {
           <p className="text-xs font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
             Instructor Feedback
           </p>
-          {assignment.reviewed_at && (
+          {(assignment.reviewed_at || assignment.reviewer_name) && (
             <p className="mt-0.5 text-[11px] text-[var(--text-muted)] font-mono-ui">
-              Reviewed {format(new Date(assignment.reviewed_at), "MMM d, yyyy")}
+              {assignment.reviewed_at &&
+                `Reviewed ${format(
+                  new Date(assignment.reviewed_at),
+                  "MMM d, yyyy"
+                )}`}
+              {assignment.reviewer_name && (
+                <> · by {assignment.reviewer_name}</>
+              )}
             </p>
           )}
         </div>
@@ -543,7 +687,7 @@ function ReviewFeedback({ assignment }) {
           </span>
         )}
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">
+      <p className="mt-3 text-sm italic leading-relaxed text-[var(--text-primary)]">
         {assignment.feedback || "No feedback yet."}
       </p>
 

@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { format } from "date-fns";
+import { differenceInDays } from "date-fns";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -16,45 +17,57 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CreditCard, Plus, Receipt as ReceiptIcon } from "lucide-react";
-import { getPayments } from "@/_lib/api/payments";
+import {
+  AlertCircle,
+  Clock,
+  CreditCard,
+  Plus,
+  TrendingUp,
+} from "lucide-react";
+import {
+  getPayments,
+  getPaymentStats,
+  getSubscriptions,
+} from "@/_lib/api/payments";
+import { useCountUp } from "@/_hooks/useCountUp";
+import { formatNaira } from "@/_lib/utils/formatters";
+import PaymentTable from "@/_components/payment/PaymentTable";
 import ReceiptModal from "@/_components/payment/ReceiptModal";
 import PaystackModal from "@/_components/payment/PaystackModal";
+import SubscriptionCard from "@/_components/payment/SubscriptionCard";
 
-const STATUS_STYLES = {
-  paid: { color: "#10B981", bg: "rgba(16,185,129,0.12)" },
-  pending: { color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
-  failed: { color: "#EF4444", bg: "rgba(239,68,68,0.12)" },
-};
+const PARENT_ID = "p1";
 
-const MONTHLY_SPEND = [
-  { month: "Feb", amount: 15000 },
-  { month: "Mar", amount: 50000 },
-  { month: "Apr", amount: 40000 },
+const RANGES = [
+  { key: "all", label: "All Time" },
+  { key: "month", label: "This Month" },
+  { key: "last", label: "Last Month" },
 ];
-
-const PAYMENT_TYPE_DATA = [
-  { name: "Subscription", value: 45000, fill: "#10B981" },
-  { name: "One-time", value: 20000, fill: "#1a2234" },
-];
-
-function formatNaira(amount) {
-  return `₦${Number(amount).toLocaleString("en-NG")}`;
-}
 
 export default function ParentPaymentsPage() {
   const [payments, setPayments] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [openReceipt, setOpenReceipt] = useState(null);
-  const [openPay, setOpenPay] = useState(false);
+  const [range, setRange] = useState("all");
+  const [receiptPayment, setReceiptPayment] = useState(null);
+  const [showPaystack, setShowPaystack] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getPayments()
-      .then(setPayments)
+    Promise.all([
+      getPayments({ parent_id: PARENT_ID }),
+      getPaymentStats(),
+      getSubscriptions(),
+    ])
+      .then(([rows, s, subs]) => {
+        setPayments(rows ?? []);
+        setStats(s ?? null);
+        setSubscriptions((subs ?? []).filter((p) => p.parent_id === PARENT_ID));
+      })
       .catch((err) => {
         console.warn("Payments fetch failed:", err.message);
         setError("Failed to load payments. Please refresh.");
@@ -62,21 +75,76 @@ export default function ParentPaymentsPage() {
       .finally(() => setLoading(false));
   }, [pathname]);
 
-  const subscriptions = useMemo(
-    () =>
-      payments.filter(
-        (p) => p.type === "subscription" && p.status === "paid"
-      ),
-    [payments]
-  );
+  const filtered = useMemo(() => {
+    if (range === "all") return payments;
+    const now = new Date();
+    return payments.filter((p) => {
+      const d = new Date(p.created_at);
+      if (range === "month") {
+        return (
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth()
+        );
+      }
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return (
+        d.getFullYear() === lastMonth.getFullYear() &&
+        d.getMonth() === lastMonth.getMonth()
+      );
+    });
+  }, [payments, range]);
 
   const sortedHistory = useMemo(
     () =>
-      [...payments].sort(
+      [...filtered].sort(
         (a, b) => new Date(b.created_at) - new Date(a.created_at)
       ),
+    [filtered]
+  );
+
+  const totalSpent = useMemo(
+    () =>
+      payments
+        .filter((p) => p.status === "paid")
+        .reduce((s, p) => s + p.amount, 0),
     [payments]
   );
+  const activeSubs = subscriptions.filter((s) => s.status === "active").length;
+  const pendingCount = payments.filter((p) => p.status === "pending").length;
+
+  const monthlyData = stats?.monthly_data ?? [];
+
+  const breakdownData = useMemo(() => {
+    const paid = payments.filter((p) => p.status === "paid");
+    const sub = paid
+      .filter((p) => p.type === "subscription")
+      .reduce((s, p) => s + p.amount, 0);
+    const ot = paid
+      .filter((p) => p.type === "one_time")
+      .reduce((s, p) => s + p.amount, 0);
+    return [
+      { name: "Subscription", value: sub, fill: "#10B981" },
+      { name: "One-time", value: ot, fill: "#1E40AF" },
+    ];
+  }, [payments]);
+
+  function handleSubscriptionCancelled(updated) {
+    setSubscriptions((list) =>
+      list.map((s) => (s.id === updated.id ? updated : s))
+    );
+  }
+
+  function handleModalClose() {
+    setShowPaystack(false);
+    // Refetch — a payment may have completed inside the modal.
+    Promise.all([
+      getPayments({ parent_id: PARENT_ID }),
+      getPaymentStats(),
+    ]).then(([rows, s]) => {
+      setPayments(rows ?? []);
+      setStats(s ?? null);
+    });
+  }
 
   return (
     <motion.div
@@ -85,7 +153,7 @@ export default function ParentPaymentsPage() {
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col gap-6"
     >
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">
             Payments
@@ -94,84 +162,171 @@ export default function ParentPaymentsPage() {
             Subscriptions, history, and quick enrollment.
           </p>
         </div>
-        <button
+        <motion.button
           type="button"
-          onClick={() => setOpenPay(true)}
+          onClick={() => setShowPaystack(true)}
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.97 }}
           className="inline-flex items-center gap-2 self-start rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#059669] sm:self-auto"
         >
           <Plus className="h-4 w-4" strokeWidth={2.5} />
           Pay Now
-        </button>
+        </motion.button>
       </header>
 
-      {error ? (
-        <ErrorState message={error} />
-      ) : (
-        <>
-          <ActiveSubscriptions
-            loading={loading}
-            items={subscriptions}
-          />
-
-          <ChartsRow />
-
-          <PaymentHistoryTable
-            loading={loading}
-            items={sortedHistory}
-            onView={setOpenReceipt}
-          />
-        </>
+      {error && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">
+          {error}
+        </div>
       )}
 
+      <StatsRow
+        totalSpent={totalSpent}
+        activeSubs={activeSubs}
+        pendingCount={pendingCount}
+        loading={loading}
+      />
+
+      <SubscriptionsSection
+        subscriptions={subscriptions}
+        loading={loading}
+        onEnroll={() => setShowPaystack(true)}
+        onCancelled={handleSubscriptionCancelled}
+      />
+
+      <ChartsRow monthlyData={monthlyData} breakdownData={breakdownData} />
+
+      <HistorySection
+        range={range}
+        setRange={setRange}
+        history={sortedHistory}
+        loading={loading}
+        onViewReceipt={setReceiptPayment}
+      />
+
       <ReceiptModal
-        payment={openReceipt}
-        onClose={() => setOpenReceipt(null)}
+        payment={receiptPayment}
+        isOpen={!!receiptPayment}
+        onClose={() => setReceiptPayment(null)}
       />
-      <PaystackModal
-        isOpen={openPay}
-        onClose={() => setOpenPay(false)}
-      />
+      <PaystackModal isOpen={showPaystack} onClose={handleModalClose} />
     </motion.div>
   );
 }
 
-function ErrorState({ message }) {
+// ── Stats row ─────────────────────────────────────────────────────────────
+
+function StatsRow({ totalSpent, activeSubs, pendingCount, loading }) {
+  const total = useCountUp(totalSpent);
   return (
-    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] py-12 text-center">
-      <p className="text-sm text-red-400">{message}</p>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="mt-3 text-sm font-semibold text-[#10B981] underline transition-colors hover:text-[#059669] font-mono-ui"
-      >
-        Refresh page
-      </button>
-    </div>
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <StatCard
+        icon={CreditCard}
+        color="#10B981"
+        label="Total Spent"
+        value={formatNaira(total)}
+        loading={loading}
+        large
+        delay={0}
+      />
+      <StatCard
+        icon={TrendingUp}
+        color="#22C55E"
+        label="Active Subscriptions"
+        value={activeSubs}
+        loading={loading}
+        delay={0.08}
+      />
+      <StatCard
+        icon={Clock}
+        color="#F59E0B"
+        label="Pending"
+        value={pendingCount}
+        loading={loading}
+        delay={0.16}
+      />
+    </section>
   );
 }
 
-// ── Section 1: Active subscriptions ───────────────────────────────────────
+function StatCard({ icon: Icon, color, label, value, loading, large, delay = 0 }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay }}
+      whileHover={{ y: -2 }}
+      className="flex flex-col gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5 transition-shadow hover:shadow-md"
+    >
+      <span
+        className="grid h-9 w-9 place-items-center rounded-xl"
+        style={{ backgroundColor: `${color}1F`, color }}
+      >
+        <Icon className="h-4 w-4" strokeWidth={2.2} />
+      </span>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        {label}
+      </p>
+      {loading ? (
+        <div className="skeleton-shimmer h-7 w-24 rounded" />
+      ) : (
+        <p
+          className={`font-bold text-[var(--text-primary)] font-mono-ui ${
+            large ? "text-3xl text-[#10B981]" : "text-2xl"
+          }`}
+        >
+          {value}
+        </p>
+      )}
+    </motion.div>
+  );
+}
 
-function ActiveSubscriptions({ loading, items }) {
+// ── Subscriptions ─────────────────────────────────────────────────────────
+
+function SubscriptionsSection({ subscriptions, loading, onEnroll, onCancelled }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold text-[var(--text-primary)]">
-        Active Subscriptions
-      </h2>
+      <header className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-[var(--text-primary)]">
+          Active Subscriptions
+        </h2>
+        <button
+          type="button"
+          onClick={onEnroll}
+          className="text-xs font-semibold text-[#10B981] transition-colors hover:text-[#059669] font-mono-ui"
+        >
+          Manage Enrollments
+        </button>
+      </header>
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="skeleton-shimmer h-32 rounded-2xl" />
+            <div key={i} className="skeleton-shimmer h-40 rounded-xl" />
           ))}
         </div>
-      ) : items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-8 text-center text-sm text-[var(--text-secondary)]">
-          No active subscriptions.
-        </p>
+      ) : subscriptions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-8 text-center">
+          <p className="text-sm text-[var(--text-secondary)]">
+            No active subscriptions
+          </p>
+          <button
+            type="button"
+            onClick={onEnroll}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[#10B981] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Enroll a Child
+          </button>
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {items.map((s, i) => (
-            <SubscriptionCard key={s.id} sub={s} index={i} />
+          {subscriptions.map((plan) => (
+            <SubscriptionCard
+              key={plan.id}
+              plan={plan}
+              onCancelled={onCancelled}
+            />
           ))}
         </div>
       )}
@@ -179,57 +334,23 @@ function ActiveSubscriptions({ loading, items }) {
   );
 }
 
-function SubscriptionCard({ sub, index }) {
-  return (
-    <motion.article
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.1 }}
-      className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-bold text-[var(--text-primary)]">
-            {sub.course_title}
-          </h3>
-          <p className="text-xs text-[var(--text-secondary)]">
-            {sub.student_name}
-          </p>
-        </div>
-        <span
-          className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-          style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)" }}
-        >
-          Active
-        </span>
-      </div>
-      <p className="mt-3 text-2xl font-bold text-[#10B981] font-mono-ui">
-        {formatNaira(sub.amount)}{" "}
-        <span className="text-xs font-medium text-[var(--text-muted)]">/ month</span>
-      </p>
-      <p className="mt-1 text-xs text-[var(--text-muted)] font-mono-ui">
-        Active since {format(new Date(sub.created_at), "MMM d, yyyy")}
-      </p>
-      <button
-        type="button"
-        className="mt-4 w-full rounded-xl border border-[var(--border-color)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
-      >
-        Manage
-      </button>
-    </motion.article>
-  );
-}
+// ── Charts ────────────────────────────────────────────────────────────────
 
-// ── Section 2: Charts row ─────────────────────────────────────────────────
-
-function ChartsRow() {
+function ChartsRow({ monthlyData, breakdownData }) {
   return (
     <section className="grid gap-4 lg:grid-cols-2">
       <ChartCard title="Monthly Spend">
-        <div style={{ width: "100%", height: 250 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={MONTHLY_SPEND} margin={{ top: 8, right: 12, bottom: 4, left: 8 }}>
-              <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" vertical={false} />
+        <div style={{ width: "100%", height: 220 }}>
+          <ResponsiveContainer>
+            <BarChart
+              data={monthlyData}
+              margin={{ top: 8, right: 12, bottom: 4, left: 8 }}
+            >
+              <CartesianGrid
+                stroke="var(--border-color)"
+                strokeDasharray="3 3"
+                vertical={false}
+              />
               <XAxis
                 dataKey="month"
                 tickLine={false}
@@ -245,46 +366,58 @@ function ChartsRow() {
               />
               <Tooltip
                 cursor={{ fill: "rgba(16,185,129,0.08)" }}
-                content={<CurrencyTooltip />}
+                content={<MonthlyTooltip />}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar
+                dataKey="subscription"
+                stackId="a"
+                name="Subscription"
+                fill="#10B981"
+                radius={[0, 0, 0, 0]}
+                animationDuration={1200}
+                animationBegin={0}
               />
               <Bar
-                dataKey="amount"
-                fill="#10B981"
+                dataKey="one_time"
+                stackId="a"
+                name="One-time"
+                fill="#1E40AF"
                 radius={[6, 6, 0, 0]}
                 animationDuration={1200}
+                animationBegin={200}
               />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </ChartCard>
 
-      <ChartCard title="Payment Type">
-        <div className="relative" style={{ width: "100%", height: 250 }}>
-          <ResponsiveContainer width="100%" height="100%">
+      <ChartCard title="Spend Breakdown">
+        <div className="relative" style={{ width: "100%", height: 220 }}>
+          <ResponsiveContainer>
             <PieChart>
               <Pie
-                data={PAYMENT_TYPE_DATA}
+                data={breakdownData}
                 dataKey="value"
                 nameKey="name"
-                innerRadius={60}
-                outerRadius={90}
+                innerRadius={50}
+                outerRadius={80}
                 paddingAngle={2}
                 stroke="var(--bg-card)"
                 strokeWidth={2}
-                animationBegin={0}
                 animationDuration={1200}
-                label={renderPieLabel}
+                animationBegin={0}
               >
-                {PAYMENT_TYPE_DATA.map((d) => (
+                {breakdownData.map((d) => (
                   <Cell key={d.name} fill={d.fill} />
                 ))}
               </Pie>
               <Tooltip content={<CurrencyTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          <PieCenterTotal data={PAYMENT_TYPE_DATA} />
+          <PieCenterTotal data={breakdownData} label="Total" />
         </div>
-        <Legend data={PAYMENT_TYPE_DATA} />
+        <PieLegend data={breakdownData} />
       </ChartCard>
     </section>
   );
@@ -299,14 +432,37 @@ function ChartCard({ title, children }) {
   );
 }
 
-function CurrencyTooltip({ active, payload, label }) {
+function MonthlyTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
-  const p = payload[0];
-  const name = p.name ?? label;
+  const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-        {name}
+        {label}
+      </p>
+      {payload.map((p) => (
+        <p
+          key={p.dataKey}
+          className="text-xs font-semibold font-mono-ui"
+          style={{ color: p.color }}
+        >
+          {p.name}: {formatNaira(p.value)}
+        </p>
+      ))}
+      <p className="mt-1 text-sm font-bold text-[var(--text-primary)] font-mono-ui">
+        Total: {formatNaira(total)}
+      </p>
+    </div>
+  );
+}
+
+function CurrencyTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0];
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        {p.name}
       </p>
       <p className="text-sm font-bold text-[#10B981] font-mono-ui">
         {formatNaira(p.value)}
@@ -315,20 +471,15 @@ function CurrencyTooltip({ active, payload, label }) {
   );
 }
 
-function renderPieLabel({ percent }) {
-  if (!percent) return "";
-  return `${Math.round(percent * 100)}%`;
-}
-
-function PieCenterTotal({ data }) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
+function PieCenterTotal({ data, label }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
   return (
     <div className="pointer-events-none absolute inset-0 grid place-items-center">
       <div className="text-center">
         <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-          Total
+          {label}
         </p>
-        <p className="mt-0.5 text-lg font-bold text-[var(--text-primary)] font-mono-ui">
+        <p className="mt-0.5 text-base font-bold text-[var(--text-primary)] font-mono-ui">
           {formatNaira(total)}
         </p>
       </div>
@@ -336,7 +487,7 @@ function PieCenterTotal({ data }) {
   );
 }
 
-function Legend({ data }) {
+function PieLegend({ data }) {
   return (
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
       {data.map((d) => (
@@ -355,107 +506,41 @@ function Legend({ data }) {
   );
 }
 
-// ── Section 3: Payment history table ──────────────────────────────────────
+// ── History ───────────────────────────────────────────────────────────────
 
-function PaymentHistoryTable({ loading, items, onView }) {
+function HistorySection({ range, setRange, history, loading, onViewReceipt }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold text-[var(--text-primary)]">
-        Payment History
-      </h2>
-      <div className="overflow-x-auto rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
-            <tr>
-              <Th>Date</Th>
-              <Th>Student</Th>
-              <Th>Course</Th>
-              <Th>Amount</Th>
-              <Th>Type</Th>
-              <Th>Status</Th>
-              <Th align="right">Receipt</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <tr key={i} className="border-b border-[var(--border-color)]">
-                  <td colSpan={7} className="p-3">
-                    <div className="skeleton-shimmer h-8 rounded-lg" />
-                  </td>
-                </tr>
-              ))
-            ) : items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="p-8 text-center text-sm text-[var(--text-secondary)]"
-                >
-                  <CreditCard className="mx-auto mb-2 h-6 w-6 text-[var(--text-muted)]" />
-                  No payments yet.
-                </td>
-              </tr>
-            ) : (
-              items.map((p) => (
-                <PaymentRow key={p.id} payment={p} onView={() => onView(p)} />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-[var(--text-primary)]">
+          Payment History
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          {RANGES.map((r) => {
+            const active = range === r.key;
+            return (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => setRange(r.key)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors font-mono-ui ${
+                  active
+                    ? "border-[#10B981] bg-[#10B981] text-white"
+                    : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+                }`}
+              >
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+      </header>
+      <PaymentTable
+        payments={history}
+        loading={loading}
+        showParent={false}
+        onViewReceipt={onViewReceipt}
+      />
     </section>
-  );
-}
-
-function Th({ children, align = "left" }) {
-  return (
-    <th
-      className={`px-4 py-3 text-${align} text-[10px] font-bold uppercase tracking-wider font-mono-ui`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function PaymentRow({ payment, onView }) {
-  const status = STATUS_STYLES[payment.status] ?? STATUS_STYLES.pending;
-  return (
-    <tr className="border-b border-[var(--border-color)] last:border-b-0 transition-colors hover:bg-[var(--bg-secondary)]/50">
-      <td className="px-4 py-3 text-[var(--text-primary)] font-mono-ui">
-        {format(new Date(payment.created_at), "MMM d, yyyy")}
-      </td>
-      <td className="px-4 py-3 text-[var(--text-primary)]">
-        {payment.student_name}
-      </td>
-      <td className="px-4 py-3 text-[var(--text-primary)]">
-        {payment.course_title}
-      </td>
-      <td className="px-4 py-3 font-bold text-[var(--text-primary)] font-mono-ui">
-        {formatNaira(payment.amount)}
-      </td>
-      <td className="px-4 py-3">
-        <span className="rounded-full bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] font-mono-ui">
-          {payment.type.replace("_", " ")}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-          style={{ color: status.color, backgroundColor: status.bg }}
-        >
-          {payment.status}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <button
-          type="button"
-          onClick={onView}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
-        >
-          <ReceiptIcon className="h-3.5 w-3.5" />
-          View
-        </button>
-      </td>
-    </tr>
   );
 }

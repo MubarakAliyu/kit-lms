@@ -20,8 +20,12 @@ import {
 } from "lucide-react";
 import PasswordStrengthBar from "@/_components/auth/PasswordStrengthBar";
 import { getStudentMe } from "@/_lib/api/students";
+import { getPayments } from "@/_lib/api/payments";
 import { changePassword } from "@/_lib/api/settings";
-import { useAuthStore } from "@/_store/authStore";
+import { formatNaira } from "@/_lib/utils/formatters";
+import CourseThumbnail from "@/_components/ui/CourseThumbnail";
+import LanguageTab from "@/_components/settings/LanguageTab";
+import { CheckCircle } from "lucide-react";
 
 const TABS = [
   { key: "profile", label: "Profile", icon: User },
@@ -50,7 +54,12 @@ export default function SettingsPage() {
             >
               {tab === "profile" && <ProfileTab />}
               {tab === "security" && <SecurityTab />}
-              {tab === "language" && <LanguageTab />}
+              {tab === "language" && (
+                <div className="flex flex-col gap-6">
+                  <LanguageTab />
+                  <ThemePicker />
+                </div>
+              )}
               {tab === "notifications" && <NotificationsTab />}
             </motion.div>
           </AnimatePresence>
@@ -96,14 +105,36 @@ function TabNav({ tab, setTab }) {
 function ProfileTab() {
   const { data: session } = useSession();
   const [student, setStudent] = useState(null);
+  const [enrollments, setEnrollments] = useState([]);
 
   useEffect(() => {
-    getStudentMe().then(setStudent).catch(() => {});
-  }, []);
+    getStudentMe()
+      .then((s) => {
+        setStudent(s);
+        const sid = s?.id ?? session?.user?.id;
+        if (!sid) return;
+        return getPayments({ student_id: sid }).then((rows) => {
+          // Collapse multi-payments per course to a single enrollment entry.
+          const byCourse = new Map();
+          for (const p of rows ?? []) {
+            const existing = byCourse.get(p.course_id);
+            if (!existing || new Date(p.created_at) > new Date(existing.created_at)) {
+              byCourse.set(p.course_id, p);
+            }
+          }
+          setEnrollments(Array.from(byCourse.values()));
+        });
+      })
+      .catch(() => {});
+  }, [session?.user?.id]);
+
+  const admissionNo =
+    session?.user?.admission_no ?? student?.admission_no ?? null;
 
   const initials =
     student?.name?.split(" ").map((s) => s[0]).slice(0, 2).join("") ||
-    session?.user?.email?.slice(0, 1).toUpperCase() ||
+    session?.user?.name?.slice(0, 1).toUpperCase() ||
+    admissionNo?.slice(0, 1).toUpperCase() ||
     "?";
 
   return (
@@ -114,11 +145,17 @@ function ProfileTab() {
         </div>
         <div>
           <p className="text-lg font-bold text-[var(--text-primary)]">
-            {student?.name ?? "—"}
+            {student?.name ?? session?.user?.name ?? "—"}
           </p>
-          <p className="text-sm text-[var(--text-secondary)]">
-            {session?.user?.email ?? "—"}
-          </p>
+          {admissionNo ? (
+            <p className="font-mono text-sm font-semibold text-[#10B981]">
+              {admissionNo}
+            </p>
+          ) : (
+            <p className="text-sm text-[var(--text-secondary)]">
+              {session?.user?.email ?? "—"}
+            </p>
+          )}
           {student?.programme_track && (
             <span className="mt-1 inline-flex w-fit rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-xs font-bold text-[#10B981] font-mono-ui">
               {student.programme_track}
@@ -127,8 +164,30 @@ function ProfileTab() {
         </div>
       </div>
 
+      <div className="w-full rounded-2xl border border-[#10B981]/30 bg-[#10B981]/5 p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#10B981] font-mono-ui">
+          Admission Number
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-lg font-bold text-[#10B981]">
+            {admissionNo ?? "—"}
+          </span>
+          <span className="rounded-full bg-[var(--bg-secondary)] px-2 py-0.5 text-xs text-[var(--text-muted)] font-mono-ui">
+            Cannot be changed
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          Use this number to log in to your account.
+        </p>
+      </div>
+
       <ReadonlyField label="Full name" value={student?.name ?? "—"} />
-      <ReadonlyField label="Email" value={session?.user?.email ?? "—"} />
+      {student?.email || session?.user?.email ? (
+        <ReadonlyField
+          label="Contact email"
+          value={student?.email ?? session?.user?.email ?? "—"}
+        />
+      ) : null}
       {student && (
         <ReadonlyField label="Age" value={String(student.age)} />
       )}
@@ -136,7 +195,73 @@ function ProfileTab() {
       <p className="text-xs text-[var(--text-muted)] font-mono-ui">
         Profile fields are managed by your parent. Contact support to make changes.
       </p>
+
+      <EnrollmentsSection enrollments={enrollments} />
     </div>
+  );
+}
+
+function EnrollmentsSection({ enrollments }) {
+  return (
+    <section className="w-full">
+      <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        My Enrollments
+      </h3>
+      {enrollments.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+          You aren&apos;t enrolled in any courses yet.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {enrollments.map((e) => (
+            <li
+              key={e.id}
+              className="flex items-center gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-3"
+            >
+              <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg">
+                <CourseThumbnail
+                  course={{ id: e.course_id, title: e.course_title }}
+                  size="sm"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-[var(--text-primary)]">
+                  {e.course_title}
+                </p>
+                <p className="text-[11px] text-[var(--text-muted)] font-mono-ui">
+                  {e.type === "subscription" ? "Subscription" : "One-time"} ·{" "}
+                  {formatNaira(e.amount)}
+                </p>
+              </div>
+              <EnrollmentBadge status={e.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function EnrollmentBadge({ status }) {
+  if (status === "paid") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
+        <CheckCircle className="h-3 w-3" strokeWidth={2.5} />
+        Enrolled
+      </span>
+    );
+  }
+  if (status === "pending") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-500 font-mono-ui">
+        Pending
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-500 font-mono-ui">
+      {status}
+    </span>
   );
 }
 
@@ -292,78 +417,8 @@ function useMemoizedRequirements(vals) {
 }
 
 // ── Language ───────────────────────────────────────────────────────────────
-
-function LanguageTab() {
-  const { languagePreference, setLanguagePreference } = useAuthStore();
-  const [selected, setSelected] = useState(languagePreference || "en");
-
-  function handleSave() {
-    setLanguagePreference(selected);
-    toast.success("Language preference saved");
-  }
-
-  return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Language</h2>
-        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-          Choose the language you&apos;d like the LMS interface in.
-        </p>
-      </header>
-
-      <div className="flex flex-col gap-3">
-        <LanguageRadio
-          flag="🇬🇧"
-          label="English"
-          checked={selected === "en"}
-          onSelect={() => setSelected("en")}
-        />
-        <LanguageRadio
-          flag="🇳🇬"
-          label="Hausa"
-          checked={selected === "ha"}
-          onSelect={() => setSelected("ha")}
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={handleSave}
-        className="self-start rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
-      >
-        Save Preference
-      </button>
-
-      <ThemePicker />
-    </div>
-  );
-}
-
-function LanguageRadio({ flag, label, checked, onSelect }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onSelect}
-      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-        checked
-          ? "border-[#10B981] bg-[#10B981]/10"
-          : "border-[var(--border-color)] hover:bg-[var(--bg-secondary)]"
-      }`}
-    >
-      <span className="text-2xl">{flag}</span>
-      <span className="flex-1 font-semibold text-[var(--text-primary)]">{label}</span>
-      <span
-        className={`grid h-5 w-5 place-items-center rounded-full border-2 ${
-          checked ? "border-[#10B981] bg-[#10B981]" : "border-[var(--border-color)]"
-        }`}
-      >
-        {checked && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
-      </span>
-    </button>
-  );
-}
+// LanguageTab is shared from @/_components/settings/LanguageTab. ThemePicker
+// is still rendered alongside it because theme is a sibling preference.
 
 function ThemePicker() {
   const { theme, setTheme } = useTheme();

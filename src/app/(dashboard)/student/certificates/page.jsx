@@ -101,7 +101,7 @@ function UnlockedCard({ cert, index, onView }) {
         <Trophy className="h-7 w-7" strokeWidth={2.2} />
       </div>
       <p className="mt-4 text-xs font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
-        Certificate Earned 🎉
+        Certificate Earned
       </p>
       <h2 className="mt-1 text-lg font-bold text-[var(--text-primary)]">{cert.course_title}</h2>
       <dl className="mt-3 flex flex-col gap-1 text-xs font-mono-ui">

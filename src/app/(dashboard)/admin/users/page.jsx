@@ -25,6 +25,7 @@ import UserDetailModal from "@/_components/admin/UserDetailModal";
 import DeactivateConfirmModal from "@/_components/admin/DeactivateConfirmModal";
 import AssignInstructorModal from "@/_components/admin/AssignInstructorModal";
 import CreateUserModal from "@/_components/admin/CreateUserModal";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const ROLE_TONE = {
   admin: { color: "#8B5CF6", bg: "rgba(139,92,246,0.12)" },
@@ -56,6 +57,7 @@ export default function AdminUsersPage() {
   const [openAssign, setOpenAssign] = useState(null);
   const [openCreate, setOpenCreate] = useState(false);
   const [createDefaults, setCreateDefaults] = useState(null);
+  const { notify } = useLiveNotify();
 
   const pathname = usePathname();
 
@@ -106,7 +108,8 @@ export default function AdminUsersPage() {
     return list.filter(
       (u) =>
         u.name?.toLowerCase().includes(q) ||
-        u.email?.toLowerCase().includes(q)
+        u.email?.toLowerCase().includes(q) ||
+        u.admission_no?.toLowerCase().includes(q)
     );
   }, [users, tab, query]);
 
@@ -116,9 +119,11 @@ export default function AdminUsersPage() {
   );
 
   function handleDeactivated(id) {
+    const target = users.find((u) => u.id === id);
     setUsers((list) =>
       list.map((u) => (u.id === id ? { ...u, status: "inactive" } : u))
     );
+    if (target) notify("user_deactivated", { name: target.name });
   }
 
   async function handleActivate(user) {
@@ -137,6 +142,7 @@ export default function AdminUsersPage() {
     setUsers((prev) => [created, ...prev]);
     if (pendingId) setPending((prev) => prev.filter((p) => p.id !== pendingId));
     setCreateDefaults(null);
+    notify("user_created", { name: created?.name });
   }
 
   function openProvisionFor(p) {
@@ -219,7 +225,7 @@ export default function AdminUsersPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or email…"
+            placeholder="Search by name, email, or admission no…"
             className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] py-2.5 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[#10B981] focus:outline-none focus:ring-2 focus:ring-[#10B981]/20"
           />
         </div>
@@ -244,6 +250,7 @@ export default function AdminUsersPage() {
               <tr>
                 <Th>User</Th>
                 <Th>Role</Th>
+                <Th>Identifier</Th>
                 <Th>Status</Th>
                 <Th>Joined</Th>
                 <Th align="right">Actions</Th>
@@ -329,9 +336,17 @@ function UserRow({
             <p className="truncate font-semibold text-[var(--text-primary)]">
               {user.name}
             </p>
-            <p className="truncate text-xs text-[var(--text-muted)] font-mono-ui">
-              {user.email}
-            </p>
+            {user.role === "student" ? (
+              user.email && (
+                <p className="truncate text-xs text-[var(--text-muted)] font-mono-ui">
+                  {user.email}
+                </p>
+              )
+            ) : (
+              <p className="truncate text-xs text-[var(--text-muted)] font-mono-ui">
+                {user.email}
+              </p>
+            )}
           </div>
         </div>
       </td>
@@ -342,6 +357,17 @@ function UserRow({
         >
           {user.role}
         </span>
+      </td>
+      <td className="px-4 py-3">
+        {user.role === "student" && user.admission_no ? (
+          <span className="font-mono text-xs font-semibold text-[#10B981]">
+            {user.admission_no}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--text-muted)] font-mono-ui">
+            {user.email || "—"}
+          </span>
+        )}
       </td>
       <td className="px-4 py-3">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold font-mono-ui">

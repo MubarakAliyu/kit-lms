@@ -23,6 +23,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   BarChart2,
@@ -46,6 +47,7 @@ import {
   getPendingEnrollments,
 } from "@/_lib/api/admin";
 import { getNotifications } from "@/_lib/api/notifications";
+import { getPaymentStats } from "@/_lib/api/payments";
 import { useNotificationStore } from "@/_store/notificationStore";
 import { useCountUp } from "@/_hooks/useCountUp";
 import CreateUserModal from "@/_components/admin/CreateUserModal";
@@ -87,7 +89,7 @@ export default function AdminDashboardHome() {
   useEffect(() => {
     if (session?.user && !hasToasted.current) {
       hasToasted.current = true;
-      toast.success("Welcome back, Admin! 👑", { duration: 3000 });
+      toast.success("Welcome back, Admin", { duration: 3000 });
     }
   }, [session]);
 
@@ -100,9 +102,20 @@ export default function AdminDashboardHome() {
       getAdminUsers(),
       getAdminCourses(),
       getNotifications(ADMIN_USER_ID),
+      getPaymentStats().catch(() => null),
     ])
-      .then(([s, a, pe, u, c, n]) => {
-        setStats(s);
+      .then(([s, a, pe, u, c, n, ps]) => {
+        // Prefer live payment stats for revenue — admin/stats is mostly user
+        // counts; payments/stats is the source of truth for revenue.
+        const merged = ps
+          ? {
+              ...s,
+              total_revenue: ps.total_revenue,
+              this_month_revenue: ps.this_month,
+              last_month_revenue: ps.last_month,
+            }
+          : s;
+        setStats(merged);
         setAnalytics(a);
         setPending(pe);
         setUsers(u);
@@ -264,7 +277,7 @@ function PendingEnrollmentsBlock({ items, onProvision }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-        <span className="text-amber-500">⚠️</span>
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" strokeWidth={2.2} />
         <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
           {items.length} enrollment{items.length === 1 ? "" : "s"} awaiting account creation
         </p>

@@ -133,6 +133,11 @@ function ChildDetailCard({ child, index }) {
           <h2 className="truncate text-xl font-bold text-[var(--text-primary)]">
             {child.name}
           </h2>
+          {child.admission_no && (
+            <p className="mt-0.5 truncate font-mono text-xs font-semibold text-[#10B981]">
+              Admission: {child.admission_no}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap gap-1.5">
             <span className="rounded-full bg-[var(--bg-secondary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] font-mono-ui">
               Age {child.age}

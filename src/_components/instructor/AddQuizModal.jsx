@@ -94,7 +94,7 @@ export default function AddQuizModal({
         })),
       };
       const created = await createQuiz(payload);
-      toast.success("Quiz created! ✅");
+      toast.success("Quiz created");
       onCreated?.(created);
       onClose?.();
     } catch {

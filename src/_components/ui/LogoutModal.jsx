@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { AnimatePresence, motion } from "motion/react";
 import { LogOut } from "lucide-react";
+import { useLanguage } from "@/_lib/i18n/LanguageContext";
 
 export default function LogoutModal({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
+  const { t } = useLanguage();
 
   // Escape closes the modal — keeps keyboard parity with the X-style affordance
   // even though this dialog only exposes Cancel / Confirm.
@@ -59,10 +61,10 @@ export default function LogoutModal({ isOpen, onClose }) {
                 <LogOut className="h-7 w-7 text-[#10B981]" strokeWidth={2.2} />
               </div>
               <h2 className="mb-2 text-xl font-bold text-[var(--text-primary)]">
-                Log out?
+                {t("auth.logoutConfirmTitle")}
               </h2>
               <p className="mb-6 text-sm text-[var(--text-secondary)]">
-                Are you sure you want to log out of Kids In Tech LMS?
+                {t("auth.logoutConfirmBody")}
               </p>
               <div className="flex flex-col gap-3">
                 <button
@@ -74,10 +76,10 @@ export default function LogoutModal({ isOpen, onClose }) {
                   {loading ? (
                     <>
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      Logging out...
+                      {t("auth.loggingOut")}
                     </>
                   ) : (
-                    "Yes, Log Out"
+                    t("auth.logoutConfirmYes")
                   )}
                 </button>
                 <button
@@ -86,7 +88,7 @@ export default function LogoutModal({ isOpen, onClose }) {
                   disabled={loading}
                   className="w-full rounded-xl border border-[var(--border-color)] py-3 font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)] disabled:opacity-60"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
               </div>
             </div>

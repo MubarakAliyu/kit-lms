@@ -9,6 +9,7 @@ import {
   BellOff,
   BookOpen,
   ClipboardCheck,
+  MessageSquare,
   Sparkles,
   Star,
   TrendingUp,
@@ -24,6 +25,7 @@ const TYPE_META = {
   course_complete: { icon: Trophy, color: "#10B981" },
   new_course: { icon: Sparkles, color: "#8B5CF6" },
   progress_milestone: { icon: TrendingUp, color: "#22C55E" },
+  new_message: { icon: MessageSquare, color: "#3B82F6" },
 };
 
 const TABS = [
@@ -32,6 +34,7 @@ const TABS = [
   { key: "lessons", label: "Lessons" },
   { key: "assignments", label: "Assignments" },
   { key: "courses", label: "Courses" },
+  { key: "messages", label: "Messages" },
 ];
 
 const TAB_FILTERS = {
@@ -44,6 +47,7 @@ const TAB_FILTERS = {
     n.type === "new_course" ||
     n.type === "progress_milestone" ||
     n.type === "quiz_result",
+  messages: (n) => n.type === "new_message",
 };
 
 export default function NotificationsPage() {

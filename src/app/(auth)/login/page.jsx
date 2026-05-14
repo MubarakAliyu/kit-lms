@@ -25,10 +25,9 @@ function LoginInner() {
 
   useEffect(() => {
     if (reset === "success") {
-      toast.success(
-        "Password set! Please log in with your new password. ✓",
-        { duration: 4000 }
-      );
+      toast.success("Password updated! Please sign in.", {
+        duration: 4000,
+      });
     }
   }, [reset]);
 

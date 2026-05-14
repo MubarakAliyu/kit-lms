@@ -76,7 +76,7 @@ export default function AddLessonModal({
         ...values,
         module_id: moduleId,
       });
-      toast.success("Lesson added! 📚");
+      toast.success("Lesson added");
       onCreated?.(created);
       onClose?.();
     } catch {

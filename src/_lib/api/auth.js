@@ -1,35 +1,28 @@
 import { apiClient } from "./client";
 
-/**
- * Auth API service — wraps the backend's auth endpoints. In development the
- * actual HTTP calls are intercepted by MSW (browser worker for client calls,
- * Node server for NextAuth's server-side authorize() callback).
- */
+export const authApi = {
+  async login({ email, password }) {
+    try {
+      const response = await apiClient.post("/login", { email, password });
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 401) {
+        return null;
+      }
+      // Network error (MSW not ready yet) — return null instead of throwing
+      // so NextAuth's authorize() callback can return null cleanly.
+      console.warn("Login API error:", error.message);
+      return null;
+    }
+  },
+};
 
-/**
- * Authenticate with email + password.
- * @param {{ email: string, password: string }} args
- */
-export async function login({ email, password }) {
-  const { data } = await apiClient.post("/login", { email, password });
-  return data;
-}
-
-/**
- * Request a password-reset email. Always resolves successfully on 2xx — the
- * backend never reveals whether the address is registered.
- * @param {{ email: string }} args
- */
 export async function requestPasswordReset({ email }) {
-  const { data } = await apiClient.post("/forgot-password", { email });
-  return data;
+  const res = await apiClient.post("/forgot-password", { email });
+  return res.data;
 }
 
-/**
- * Submit a new password using the token from the reset-link email.
- * @param {{ token: string, password: string }} args
- */
 export async function resetPassword({ token, password }) {
-  const { data } = await apiClient.post("/reset-password", { token, password });
-  return data;
+  const res = await apiClient.post("/reset-password", { token, password });
+  return res.data;
 }

@@ -15,6 +15,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useNotificationStore } from "@/_store/notificationStore";
+import { useLanguage } from "@/_lib/i18n/LanguageContext";
 
 // Maps Notification.type → { icon, color }. Falls back to a neutral bell.
 const TYPE_META = {
@@ -33,6 +34,7 @@ function metaFor(type) {
 export default function NotificationDropdown({ onClose }) {
   const router = useRouter();
   const { notifications, markAllRead, markOneRead } = useNotificationStore();
+  const { t } = useLanguage();
   const hasItems = notifications.length > 0;
 
   function handleItemClick(n) {
@@ -53,7 +55,7 @@ export default function NotificationDropdown({ onClose }) {
     >
       <header className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3">
         <h2 className="font-sans text-base font-semibold text-[var(--text-primary)]">
-          Notifications
+          {t("notifications.notifications")}
         </h2>
         {hasItems && (
           <button
@@ -61,7 +63,7 @@ export default function NotificationDropdown({ onClose }) {
             onClick={markAllRead}
             className="rounded-md px-2 py-1 text-xs font-semibold text-[#10B981] transition-colors hover:bg-[#10B981]/10 font-mono-ui"
           >
-            Mark all read
+            {t("common.markAllRead")}
           </button>
         )}
       </header>
@@ -87,7 +89,7 @@ export default function NotificationDropdown({ onClose }) {
         onClick={onClose}
         className="block border-t border-[var(--border-color)] px-4 py-2.5 text-center text-xs font-semibold text-[#10B981] transition-colors hover:bg-[#10B981]/10 font-mono-ui"
       >
-        View all
+        {t("common.viewAll")}
       </Link>
     </motion.div>
   );
@@ -141,13 +143,14 @@ function NotificationItem({ notification, onClick }) {
 }
 
 function EmptyState() {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
       <div className="grid h-12 w-12 place-items-center rounded-full bg-[var(--bg-secondary)] text-[var(--text-muted)]">
         <BellOff className="h-6 w-6" strokeWidth={2} />
       </div>
       <p className="text-sm font-medium text-[var(--text-secondary)]">
-        You&apos;re all caught up
+        {t("notifications.allCaughtUp")}
       </p>
     </div>
   );

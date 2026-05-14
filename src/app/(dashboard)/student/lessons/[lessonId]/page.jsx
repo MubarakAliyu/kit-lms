@@ -12,6 +12,8 @@ import {
   FileText,
   Loader2,
   Play,
+  Sparkles,
+  Star,
 } from "lucide-react";
 import {
   getLesson,
@@ -19,7 +21,17 @@ import {
   markLessonComplete,
 } from "@/_lib/api/lessons";
 
-const CONFETTI = ["🎉", "✨", "🎊", "⭐", "🎉", "✨", "🎊"];
+// Confetti burst particles. Variety comes from icon, hue, and animation
+// offset — no emoji glyphs.
+const CONFETTI = [
+  { Icon: Sparkles, color: "#10B981" },
+  { Icon: Star, color: "#F59E0B" },
+  { Icon: Sparkles, color: "#3B82F6" },
+  { Icon: Star, color: "#10B981" },
+  { Icon: Sparkles, color: "#F59E0B" },
+  { Icon: Star, color: "#8B5CF6" },
+  { Icon: Sparkles, color: "#EF4444" },
+];
 
 function extractYouTubeId(url) {
   if (!url) return "";
@@ -71,7 +83,7 @@ export default function LessonViewerPage({ params }) {
       await markLessonComplete(lesson.id);
       setCompleted(true);
       setShowConfetti(true);
-      toast.success("Lesson completed! 🎉");
+      toast.success("Lesson completed");
       setTimeout(() => setShowConfetti(false), 1600);
     } catch {
       toast.error("Couldn't mark complete");
@@ -229,22 +241,23 @@ function ConfettiBurst() {
       className="pointer-events-none fixed inset-0 z-[60] overflow-hidden"
     >
       <AnimatePresence>
-        {CONFETTI.map((emoji, i) => (
+        {CONFETTI.map(({ Icon, color }, i) => (
           <motion.span
             key={i}
-            className="absolute text-3xl"
-            style={{ left: `${10 + ((i * 13) % 80)}%`, top: "55%" }}
-            initial={{ y: 0, opacity: 1, rotate: 0 }}
+            className="absolute"
+            style={{ left: `${10 + ((i * 13) % 80)}%`, top: "55%", color }}
+            initial={{ y: 0, opacity: 1, rotate: 0, scale: 1 }}
             animate={{
               y: -260 - (i % 3) * 40,
               x: (i % 2 === 0 ? 1 : -1) * (40 + i * 8),
               opacity: 0,
               rotate: i % 2 === 0 ? 180 : -180,
+              scale: 1.4,
             }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1.4, delay: i * 0.05, ease: "easeOut" }}
           >
-            {emoji}
+            <Icon className="h-7 w-7" strokeWidth={2.4} />
           </motion.span>
         ))}
       </AnimatePresence>

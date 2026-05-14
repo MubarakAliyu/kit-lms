@@ -22,6 +22,7 @@ const TYPE_META = {
   quiz_completed: { icon: Star, color: "#10B981" },
   student_enrolled: { icon: UserPlus, color: "#22C55E" },
   course_message: { icon: MessageSquare, color: "#3B82F6" },
+  new_message: { icon: MessageSquare, color: "#3B82F6" },
 };
 
 const TABS = [
@@ -29,6 +30,7 @@ const TABS = [
   { key: "unread", label: "Unread" },
   { key: "submissions", label: "Submissions" },
   { key: "students", label: "Students" },
+  { key: "messages", label: "Messages" },
 ];
 
 const TAB_FILTERS = {
@@ -37,6 +39,7 @@ const TAB_FILTERS = {
   submissions: (n) => n.type === "assignment_submitted",
   students: (n) =>
     n.type === "student_enrolled" || n.type === "quiz_completed",
+  messages: (n) => n.type === "new_message" || n.type === "course_message",
 };
 
 export default function InstructorNotificationsPage() {

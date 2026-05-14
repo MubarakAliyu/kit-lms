@@ -3,38 +3,34 @@
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
-import { Receipt, X } from "lucide-react";
+import { Check, FileText, Printer, Receipt, X } from "lucide-react";
+import { formatNaira } from "@/_lib/utils/formatters";
+import { useLanguage } from "@/_lib/i18n/LanguageContext";
 
-const STATUS_BADGE = {
-  paid: { color: "#10B981", bg: "rgba(16,185,129,0.12)" },
-  pending: { color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
-  failed: { color: "#EF4444", bg: "rgba(239,68,68,0.12)" },
-};
+export default function ReceiptModal({ payment, isOpen, onClose }) {
+  // Backwards-compatible: legacy callers pass `payment` alone (no isOpen).
+  const open = isOpen ?? !!payment;
+  const { t } = useLanguage();
 
-function formatNaira(amount) {
-  return `₦${Number(amount).toLocaleString("en-NG")}`;
-}
-
-export default function ReceiptModal({ payment, onClose }) {
   useEffect(() => {
-    if (!payment) return;
+    if (!open) return;
     const onKey = (e) => {
       if (e.key === "Escape") onClose?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [payment, onClose]);
+  }, [open, onClose]);
 
   return (
     <AnimatePresence>
-      {payment && (
+      {open && payment && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={onClose}
-          className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4 backdrop-blur-sm no-print"
           role="dialog"
           aria-modal="true"
           aria-label="Payment receipt"
@@ -45,53 +41,99 @@ export default function ReceiptModal({ payment, onClose }) {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl"
+            className="print-receipt w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl"
           >
             <header className="flex items-center justify-between gap-3 bg-[#10B981] px-5 py-4 text-white">
               <div className="flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-white/15">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-white/15">
                   <Receipt className="h-5 w-5" strokeWidth={2.2} />
                 </span>
                 <h2 className="text-sm font-bold uppercase tracking-wider font-mono-ui">
-                  Payment Receipt
+                  {t("payments.paymentReceipt")}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="grid h-8 w-8 place-items-center rounded-full text-white/85 transition-colors hover:bg-white/10"
+                className="grid h-8 w-8 place-items-center rounded-full text-white/85 transition-colors hover:bg-white/10 no-print"
               >
                 <X className="h-4 w-4" />
               </button>
             </header>
 
-            <div className="flex flex-col gap-3 px-5 py-5">
-              <Row label="Receipt #" value={payment.paystack_ref} mono />
-              <Row
-                label="Date"
-                value={format(new Date(payment.created_at), "MMM d, yyyy")}
-                mono
-              />
-              <Row label="Student" value={payment.student_name} />
-              <Row label="Course" value={payment.course_title} />
-              <Row label="Amount" value={formatNaira(payment.amount)} mono bold />
-              <Row label="Type" value={payment.type.replace("_", " ")} mono />
-              <div className="flex items-center justify-between border-t border-[var(--border-color)] pt-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-                  Status
-                </span>
-                <StatusBadge status={payment.status} />
+            <div className="flex flex-col gap-4 px-5 py-5">
+              <p className="text-sm font-bold text-[#10B981] font-mono-ui">
+                {t("payments.receiptNumber")}: RCP-{payment.id.toUpperCase()}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
+                <KV
+                  label={t("payments.reference")}
+                  value={format(new Date(payment.created_at), "MMM d, yyyy")}
+                />
+                <div>
+                  <Label>{t("users.status")}</Label>
+                  <p className="mt-0.5 inline-flex items-center gap-1 text-sm font-bold text-[#10B981] font-mono-ui">
+                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                    {payment.status === "paid"
+                      ? t("payments.paid")
+                      : payment.status}
+                  </p>
+                </div>
               </div>
+
+              <Block label={t("payments.billedTo")}>
+                {payment.parent_name ?? "—"}
+              </Block>
+
+              <Block label={t("payments.student")}>
+                {payment.student_name ?? "—"}
+                {payment.student_admission_no
+                  ? ` · ${payment.student_admission_no}`
+                  : ""}
+              </Block>
+
+              <Block label={t("payments.course")}>
+                <span className="font-bold">{payment.course_title}</span>
+                <br />
+                <span className="text-xs text-[var(--text-secondary)]">
+                  {payment.type === "subscription"
+                    ? t("payments.monthlySubscription")
+                    : t("payments.oneTimePayment")}
+                </span>
+              </Block>
+
+              <div className="border-t border-[var(--border-color)] pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>{t("payments.amountPaid")}</Label>
+                  <p className="text-2xl font-bold text-[#10B981] font-mono-ui">
+                    {formatNaira(payment.amount)}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-[var(--text-muted)] font-mono-ui">
+                {t("payments.reference")}: {payment.paystack_ref}
+              </p>
             </div>
 
-            <footer className="flex items-center justify-end border-t border-[var(--border-color)] px-5 py-3">
+            <footer className="flex items-center justify-end gap-2 border-t border-[var(--border-color)] px-5 py-3 no-print">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border-color)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)] active:scale-95"
+              >
+                <Printer className="h-4 w-4" />
+                {t("payments.printReceipt")}
+              </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-xl border border-[var(--border-color)] px-4 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#10B981] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669] active:scale-95"
               >
-                Close
+                <FileText className="h-4 w-4" />
+                {t("common.close")}
               </button>
             </footer>
           </motion.div>
@@ -101,33 +143,30 @@ export default function ReceiptModal({ payment, onClose }) {
   );
 }
 
-function Row({ label, value, mono = false, bold = false }) {
+function Label({ children }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-        {label}
-      </span>
-      <span
-        className={`text-sm capitalize ${
-          bold
-            ? "font-bold text-[var(--text-primary)]"
-            : "font-semibold text-[var(--text-primary)]"
-        } ${mono ? "font-mono-ui" : ""}`}
-      >
+    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+      {children}
+    </span>
+  );
+}
+
+function KV({ label, value }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <p className="mt-0.5 text-sm font-semibold text-[var(--text-primary)] font-mono-ui">
         {value}
-      </span>
+      </p>
     </div>
   );
 }
 
-function StatusBadge({ status }) {
-  const meta = STATUS_BADGE[status] ?? STATUS_BADGE.pending;
+function Block({ label, children }) {
   return (
-    <span
-      className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-      style={{ color: meta.color, backgroundColor: meta.bg }}
-    >
-      {status}
-    </span>
+    <div>
+      <Label>{label}</Label>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{children}</p>
+    </div>
   );
 }

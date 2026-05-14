@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { getChildren, getStudentProgress } from "@/_lib/api/parents";
 import { getPayments } from "@/_lib/api/payments";
+import PaymentTable from "@/_components/payment/PaymentTable";
 import { getNotifications } from "@/_lib/api/notifications";
 import { useParentStore } from "@/_store/parentStore";
 import { useNotificationStore } from "@/_store/notificationStore";
@@ -78,7 +79,7 @@ export default function ParentDashboardHome() {
       // through as-is.
       const parts = fullName.trim().split(/\s+/);
       const display = parts.length > 1 ? parts.slice(0, -1).join(" ") : fullName;
-      toast.success(`Welcome back, ${display}! 👋`, {
+      toast.success(`Welcome back, ${display}`, {
         description: `Logged in as ${fullName}`,
         duration: 3000,
       });
@@ -403,30 +404,9 @@ function RecentPayments({ items }) {
         </Link>
       </header>
 
-      {recent.length === 0 ? (
-        <p className="mt-4 text-sm text-[var(--text-secondary)]">
-          No payments yet.
-        </p>
-      ) : (
-        <ul className="mt-4 flex flex-col gap-2">
-          {recent.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center justify-between gap-3 rounded-xl bg-[var(--bg-secondary)] p-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                  {formatNaira(p.amount)} · {p.course_title}
-                </p>
-                <p className="text-xs text-[var(--text-muted)] font-mono-ui">
-                  {format(new Date(p.created_at), "MMM d, yyyy")}
-                </p>
-              </div>
-              <PaymentStatusBadge status={p.status} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="mt-4">
+        <PaymentTable payments={recent} compact loading={false} showParent={false} />
+      </div>
     </section>
   );
 }

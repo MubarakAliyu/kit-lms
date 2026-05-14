@@ -85,7 +85,7 @@ export default function StudentDashboardHome() {
         session.user.email?.split("@")[0] ||
         "back";
       const firstName = fullName.split(" ")[0];
-      toast.success(`Welcome back, ${firstName}! 👋`, {
+      toast.success(`Welcome back, ${firstName}`, {
         description: `Logged in as ${fullName}`,
         duration: 3000,
       });
@@ -149,7 +149,7 @@ function WelcomeBanner({ studentName, now }) {
     >
       <div className="relative z-10 flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
-          {now ? `Good ${getGreeting()}, ${studentName}! 👋` : `Hi, ${studentName}! 👋`}
+          {now ? `Good ${getGreeting()}, ${studentName}` : `Hi, ${studentName}`}
         </h1>
         {now && (
           <p className="text-sm text-[var(--text-secondary)] sm:text-base font-mono-ui">

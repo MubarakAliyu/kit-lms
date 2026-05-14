@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Bell, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { sendAnnouncement } from "@/_lib/api/admin";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const TARGETS = [
   { key: "all", label: "All Users", count: 7 },
@@ -23,6 +24,7 @@ export default function AnnouncementModal({ isOpen, onClose, courses }) {
   const [message, setMessage] = useState("");
   const [priority, setPriority] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const { notify } = useLiveNotify();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -67,9 +69,8 @@ export default function AnnouncementModal({ isOpen, onClose, courses }) {
         message: message.trim(),
         priority,
       });
-      toast.success(
-        `Announcement sent to ${res?.sent_count ?? audienceCount} users! 📢`
-      );
+      const count = res?.sent_count ?? audienceCount;
+      notify("announcement_sent", { count });
       onClose?.();
     } catch {
       toast.error("Couldn't send announcement");
@@ -207,8 +208,9 @@ export default function AnnouncementModal({ isOpen, onClose, courses }) {
                   onChange={(e) => setPriority(e.target.checked)}
                   className="accent-[#10B981]"
                 />
-                <span className="text-sm font-semibold text-[var(--text-primary)]">
-                  Mark as important 🔔
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
+                  Mark as important
+                  <Bell className="h-3.5 w-3.5 text-amber-500" />
                 </span>
               </label>
 
@@ -221,9 +223,13 @@ export default function AnnouncementModal({ isOpen, onClose, courses }) {
                     <Bell className="h-4 w-4" strokeWidth={2.2} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-[var(--text-primary)]">
-                      {priority ? "🔔 " : ""}
-                      {title.trim() || "Your announcement title"}
+                    <p className="inline-flex items-center gap-1.5 truncate text-sm font-bold text-[var(--text-primary)]">
+                      {priority && (
+                        <Bell className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      )}
+                      <span className="truncate">
+                        {title.trim() || "Your announcement title"}
+                      </span>
                     </p>
                     <p className="line-clamp-2 text-xs text-[var(--text-secondary)]">
                       {message.trim() || "Your announcement message will appear here."}

@@ -12,6 +12,66 @@ const DEFAULT_NEW_USER_PASSWORD = "default1234";
 // drained by POST /user/change-password once the new password is set.
 const FORCE_RESET_EMAILS = new Set();
 
+// Admission numbers (KIT/YY/XXX) of students whose accounts were just
+// provisioned and need to reset their password on first login. Lives
+// next to FORCE_RESET_EMAILS so we can resolve must_reset_password for
+// students who log in with admission_no instead of email.
+const FORCE_RESET_ADMISSION_NOS = new Set();
+
+// Auto-incrementing admission counter. Bumped past pre-assigned numbers
+// below so generateAdmissionNumber returns a fresh slot on the first
+// admin-created student of the session.
+let admissionCounter = 1;
+const ADMISSION_YEAR = "26";
+
+function generateAdmissionNumber() {
+  const num = String(admissionCounter).padStart(3, "0");
+  admissionCounter += 1;
+  return `KIT/${ADMISSION_YEAR}/${num}`;
+}
+
+// Pre-assigned admission numbers for the seed students. Keyed by the
+// admission number itself so POST /login can do an O(1) lookup when the
+// identifier matches the KIT/YY/XXX format.
+const ADMISSION_NUMBERS = {
+  "KIT/26/001": {
+    admission_no: "KIT/26/001",
+    password: "KIT@learn2025",
+    role: "student",
+    name: "Liam Hassan",
+    id: "u5",
+    email: "student@kidsintech.school",
+  },
+  "KIT/26/002": {
+    admission_no: "KIT/26/002",
+    password: "KIT@learn2025",
+    role: "student",
+    name: "Aisha Hassan",
+    id: "u6",
+    email: "aisha@kidsintech.school",
+  },
+  "KIT/26/003": {
+    admission_no: "KIT/26/003",
+    password: "KIT@learn2025",
+    role: "student",
+    name: "Emeka Obi",
+    id: "u7",
+    email: "emeka@kidsintech.school",
+  },
+};
+// Skip the pre-assigned slots so the next generated number is KIT/26/004.
+admissionCounter = 4;
+
+// Reverse lookup so admin/users + /students/me can hydrate admission_no
+// from the user/student id without a second pass through ADMISSION_NUMBERS.
+const ADMISSION_BY_USER_ID = Object.values(ADMISSION_NUMBERS).reduce(
+  (acc, row) => {
+    acc[row.id] = row.admission_no;
+    return acc;
+  },
+  {}
+);
+
 // Pending enrollment requests created when a parent adds a child but the
 // admin hasn't yet provisioned a login. Drained when admin creates the
 // user account from the dashboard.
@@ -54,6 +114,8 @@ const STUDENT_ME = {
   name: "Liam Hassan",
   age: 12,
   programme_track: "Web Development",
+  admission_no: "KIT/26/001",
+  email: "student@kidsintech.school",
 };
 
 const COURSES = [
@@ -145,6 +207,11 @@ const ASSIGNMENTS = [
     status: "reviewed",
     feedback: "Great work! Well structured.",
     grade: "A",
+    reviewed_at: "2025-05-02T12:00:00Z",
+    reviewer_name: "Ms. Sarah Aliyu",
+    submission_type: "text",
+    submission_content:
+      "Built a 10-question Scratch quiz with branching for wrong answers and a celebration animation on a 100% score.",
   },
 ];
 
@@ -200,7 +267,7 @@ const NOTIFICATIONS = [
     id: "n3",
     user_id: "s1",
     type: "course_complete",
-    title: "🎉 Course Completed!",
+    title: "Course Completed",
     message:
       "You have completed Scratch Programming. Your certificate is ready!",
     is_read: false,
@@ -231,7 +298,7 @@ const NOTIFICATIONS = [
     id: "n6",
     user_id: "s1",
     type: "progress_milestone",
-    title: "Milestone Reached! 🏆",
+    title: "Milestone Reached",
     message: "You have completed 50% of Web Development",
     is_read: true,
     created_at: "2025-04-22T15:00:00Z",
@@ -239,57 +306,135 @@ const NOTIFICATIONS = [
   },
 ];
 
-const CONVERSATIONS = [
-  {
-    id: "conv1",
-    participant_id: "i1",
-    participant_name: "Ms. Sarah",
-    participant_role: "instructor",
-    participant_initial: "S",
-    last_message: "Great work on your last assignment!",
-    last_message_time: "2025-04-27T10:00:00Z",
-    unread_count: 1,
-  },
-  {
-    id: "conv2",
-    participant_id: "i2",
-    participant_name: "Mr. Ahmed",
-    participant_role: "instructor",
-    participant_initial: "A",
-    last_message: "See you in the next session",
-    last_message_time: "2025-04-26T14:00:00Z",
-    unread_count: 0,
-  },
-];
+// ── Unified chat store ─────────────────────────────────────────────────────
+// Per-conversation message arrays (mutated in place by POST /messages and
+// PUT /messages/read so the UI sees consistent state across roles).
+const CHAT_MESSAGES = {
+  conv_s1_i1: [
+    { id: "m1", sender_id: "s1", receiver_id: "i1", message: "Hi Ms. Sarah! How are you finding the Scratch course so far?", file_url: null, file_type: null, created_at: "2025-04-27T09:00:00Z", read: true },
+    { id: "m2", sender_id: "i1", receiver_id: "s1", message: "Hi Liam! I am really enjoying teaching it. How about you?", file_url: null, file_type: null, created_at: "2025-04-27T09:02:00Z", read: true },
+    { id: "m3", sender_id: "s1", receiver_id: "i1", message: "I love the animations module! I built a cat chasing a mouse.", file_url: null, file_type: null, created_at: "2025-04-27T09:05:00Z", read: true },
+    { id: "m4", sender_id: "i1", receiver_id: "s1", message: "That sounds amazing! Great work on your last assignment!", file_url: null, file_type: null, created_at: "2025-04-27T10:00:00Z", read: false },
+  ],
+  conv_s2_i1: [
+    { id: "m5", sender_id: "s2", receiver_id: "i1", message: "Hi! When is the next assignment due?", file_url: null, file_type: null, created_at: "2025-04-26T13:00:00Z", read: true },
+    { id: "m6", sender_id: "i1", receiver_id: "s2", message: "Hi Aisha! The next assignment is due May 15th.", file_url: null, file_type: null, created_at: "2025-04-26T13:05:00Z", read: true },
+  ],
+  conv_s3_i1: [
+    { id: "m9", sender_id: "s3", receiver_id: "i1", message: "Thank you for the feedback!", file_url: null, file_type: null, created_at: "2025-04-25T10:00:00Z", read: true },
+  ],
+  conv_p1_admin: [
+    { id: "m7", sender_id: "p1", receiver_id: "admin1", message: "Hello, I have a question about enrollment fees.", file_url: null, file_type: null, created_at: "2025-04-26T11:00:00Z", read: false },
+    { id: "m8", sender_id: "admin1", receiver_id: "p1", message: "Hi Mrs. Hassan! Happy to help. What would you like to know?", file_url: null, file_type: null, created_at: "2025-04-26T11:05:00Z", read: true },
+  ],
+};
 
-const CONV_MESSAGES = [
-  {
-    id: "m1",
-    sender_id: "i1",
-    receiver_id: "s1",
-    message: "Hi Liam! How are you finding the Scratch course so far?",
-    file_url: null,
-    created_at: "2025-04-27T09:00:00Z",
-  },
-  {
-    id: "m2",
-    sender_id: "s1",
-    receiver_id: "i1",
-    message:
-      "Hi Ms. Sarah! I am really enjoying it, especially the animations module.",
-    file_url: null,
-    created_at: "2025-04-27T09:05:00Z",
-  },
-  {
-    id: "m3",
-    sender_id: "i1",
-    receiver_id: "s1",
-    message:
-      "Great work on your last assignment! Your sprite design was very creative.",
-    file_url: null,
-    created_at: "2025-04-27T10:00:00Z",
-  },
-];
+// Per-user conversation lists. Keyed by the *viewing* user id so the same
+// underlying conversation can show different participant_name/initial for
+// each side.
+const CONVERSATIONS_BY_USER = {
+  s1: [
+    {
+      id: "conv_s1_i1",
+      participant_id: "i1",
+      participant_name: "Ms. Sarah Aliyu",
+      participant_role: "instructor",
+      participant_initial: "S",
+      last_message: "Great work on your last assignment!",
+      last_message_time: "2025-04-27T10:00:00Z",
+      unread_count: 1,
+    },
+  ],
+  s2: [
+    {
+      id: "conv_s2_i1",
+      participant_id: "i1",
+      participant_name: "Ms. Sarah Aliyu",
+      participant_role: "instructor",
+      participant_initial: "S",
+      last_message: "Hi Aisha! The next assignment is due May 15th.",
+      last_message_time: "2025-04-26T13:05:00Z",
+      unread_count: 0,
+    },
+  ],
+  s3: [
+    {
+      id: "conv_s3_i1",
+      participant_id: "i1",
+      participant_name: "Ms. Sarah Aliyu",
+      participant_role: "instructor",
+      participant_initial: "S",
+      last_message: "Thank you for the feedback!",
+      last_message_time: "2025-04-25T10:00:00Z",
+      unread_count: 0,
+    },
+  ],
+  i1: [
+    {
+      id: "conv_s1_i1",
+      participant_id: "s1",
+      participant_name: "Liam Hassan",
+      participant_role: "student",
+      participant_initial: "L",
+      last_message: "I love the animations module!",
+      last_message_time: "2025-04-27T09:05:00Z",
+      unread_count: 0,
+    },
+    {
+      id: "conv_s2_i1",
+      participant_id: "s2",
+      participant_name: "Aisha Hassan",
+      participant_role: "student",
+      participant_initial: "A",
+      last_message: "When is the next assignment due?",
+      last_message_time: "2025-04-26T13:00:00Z",
+      unread_count: 1,
+    },
+    {
+      id: "conv_s3_i1",
+      participant_id: "s3",
+      participant_name: "Emeka Obi",
+      participant_role: "student",
+      participant_initial: "E",
+      last_message: "Thank you for the feedback!",
+      last_message_time: "2025-04-25T10:00:00Z",
+      unread_count: 0,
+    },
+  ],
+  p1: [
+    {
+      id: "conv_p1_admin",
+      participant_id: "admin1",
+      participant_name: "Support Team",
+      participant_role: "admin",
+      participant_initial: "KIT",
+      last_message: "Happy to help. What would you like to know?",
+      last_message_time: "2025-04-26T11:05:00Z",
+      unread_count: 1,
+    },
+  ],
+  admin1: [
+    {
+      id: "conv_p1_admin",
+      participant_id: "p1",
+      participant_name: "Mrs. Fatima Hassan",
+      participant_role: "parent",
+      participant_initial: "F",
+      last_message: "Hello, I have a question about enrollment fees.",
+      last_message_time: "2025-04-26T11:00:00Z",
+      unread_count: 1,
+    },
+  ],
+};
+
+// Quick lookup the admin monitor uses to project participants onto a
+// conversation row.
+const CONVERSATION_PARTICIPANTS = {
+  conv_s1_i1: { participants: ["Liam Hassan", "Ms. Sarah Aliyu"], roles: ["student", "instructor"] },
+  conv_s2_i1: { participants: ["Aisha Hassan", "Ms. Sarah Aliyu"], roles: ["student", "instructor"] },
+  conv_s3_i1: { participants: ["Emeka Obi", "Ms. Sarah Aliyu"], roles: ["student", "instructor"] },
+  conv_p1_admin: { participants: ["Mrs. Fatima Hassan", "Support Team"], roles: ["parent", "admin"] },
+};
 
 // ── Parent data ────────────────────────────────────────────────────────────
 // `Parent` derives from User (role === 'parent'); the demo backend exposes
@@ -312,6 +457,7 @@ const PARENT_CHILDREN = [
     avatar_initial: "L",
     enrolled_courses: 3,
     completed_courses: 1,
+    admission_no: "KIT/26/001",
   },
   {
     id: "s2",
@@ -322,6 +468,7 @@ const PARENT_CHILDREN = [
     avatar_initial: "A",
     enrolled_courses: 1,
     completed_courses: 0,
+    admission_no: "KIT/26/002",
   },
 ];
 
@@ -368,63 +515,175 @@ const STUDENT_PROGRESS = {
   ],
 };
 
-const PAYMENTS = [
+// Unified payments table — sourced by every payment-related endpoint
+// (parent /payments?parent_id=…, admin /admin/payments, stats, receipt).
+// Mutated in-place by POST /paystack/verify so the UI can re-fetch and see
+// newly-confirmed transactions consistently across roles.
+const PAYMENTS_DB = [
   {
     id: "pay1",
     parent_id: "p1",
     student_id: "s1",
+    parent_name: "Mrs. Fatima Hassan",
+    student_name: "Liam Hassan",
     amount: 15000,
     type: "subscription",
     status: "paid",
     paystack_ref: "PSK_123456",
+    course_id: "c1",
     course_title: "Scratch Programming",
-    student_name: "Liam Hassan",
     created_at: "2025-04-01T00:00:00Z",
+    paid_at: "2025-04-01T00:05:00Z",
   },
   {
     id: "pay2",
     parent_id: "p1",
     student_id: "s1",
+    parent_name: "Mrs. Fatima Hassan",
+    student_name: "Liam Hassan",
     amount: 20000,
     type: "one_time",
     status: "paid",
     paystack_ref: "PSK_234567",
+    course_id: "c2",
     course_title: "Web Development",
-    student_name: "Liam Hassan",
     created_at: "2025-03-15T00:00:00Z",
+    paid_at: "2025-03-15T00:03:00Z",
   },
   {
     id: "pay3",
     parent_id: "p1",
     student_id: "s2",
+    parent_name: "Mrs. Fatima Hassan",
+    student_name: "Aisha Hassan",
     amount: 15000,
     type: "subscription",
     status: "paid",
     paystack_ref: "PSK_345678",
+    course_id: "c1",
     course_title: "Scratch Programming",
-    student_name: "Aisha Hassan",
     created_at: "2025-03-01T00:00:00Z",
+    paid_at: "2025-03-01T00:02:00Z",
   },
   {
     id: "pay4",
     parent_id: "p1",
     student_id: "s1",
+    parent_name: "Mrs. Fatima Hassan",
+    student_name: "Liam Hassan",
     amount: 25000,
     type: "subscription",
     status: "pending",
     paystack_ref: "PSK_456789",
+    course_id: "c3",
     course_title: "Robotics Basics",
-    student_name: "Liam Hassan",
     created_at: "2025-04-20T00:00:00Z",
+    paid_at: null,
+  },
+  {
+    id: "pay5",
+    parent_id: "p2",
+    student_id: "s3",
+    parent_name: "Mr. James Obi",
+    student_name: "Emeka Obi",
+    amount: 15000,
+    type: "subscription",
+    status: "failed",
+    paystack_ref: "PSK_567890",
+    course_id: "c1",
+    course_title: "Scratch Programming",
+    created_at: "2025-04-18T00:00:00Z",
+    paid_at: null,
   },
 ];
+
+// Active recurring plans. Cancellation flips status → 'cancelled' in place.
+const SUBSCRIPTION_PLANS = [
+  {
+    id: "plan1",
+    course_id: "c1",
+    course_title: "Scratch Programming",
+    amount: 15000,
+    interval: "monthly",
+    student_id: "s1",
+    student_name: "Liam Hassan",
+    parent_id: "p1",
+    status: "active",
+    start_date: "2025-02-01T00:00:00Z",
+    next_billing: "2025-05-01T00:00:00Z",
+  },
+  {
+    id: "plan2",
+    course_id: "c1",
+    course_title: "Scratch Programming",
+    amount: 15000,
+    interval: "monthly",
+    student_id: "s2",
+    student_name: "Aisha Hassan",
+    parent_id: "p1",
+    status: "active",
+    start_date: "2025-03-01T00:00:00Z",
+    next_billing: "2025-05-01T00:00:00Z",
+  },
+];
+
+function paymentStats() {
+  const paid = PAYMENTS_DB.filter((p) => p.status === "paid");
+  const subscription = paid
+    .filter((p) => p.type === "subscription")
+    .reduce((s, p) => s + p.amount, 0);
+  const oneTime = paid
+    .filter((p) => p.type === "one_time")
+    .reduce((s, p) => s + p.amount, 0);
+  const total = subscription + oneTime;
+  const pending = PAYMENTS_DB.filter((p) => p.status === "pending").length;
+  const failed = PAYMENTS_DB.filter((p) => p.status === "failed").length;
+
+  // Group paid transactions by month for the stacked-bar chart.
+  const buckets = {};
+  for (const p of paid) {
+    const d = new Date(p.created_at);
+    const key = d.toLocaleString("en-US", { month: "short" });
+    if (!buckets[key])
+      buckets[key] = { month: key, subscription: 0, one_time: 0 };
+    buckets[key][p.type] += p.amount;
+  }
+  const ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+  const monthly_data = ORDER.map(
+    (m) => buckets[m] ?? { month: m, subscription: 0, one_time: 0 }
+  );
+
+  // Coarse this-month vs last-month comparison for trend arrows.
+  const now = new Date();
+  const thisMonthKey = now.toLocaleString("en-US", { month: "short" });
+  const lastMonthDate = new Date(now);
+  lastMonthDate.setMonth(now.getMonth() - 1);
+  const lastMonthKey = lastMonthDate.toLocaleString("en-US", { month: "short" });
+  const this_month =
+    (buckets[thisMonthKey]?.subscription ?? 0) +
+    (buckets[thisMonthKey]?.one_time ?? 0);
+  const last_month =
+    (buckets[lastMonthKey]?.subscription ?? 0) +
+    (buckets[lastMonthKey]?.one_time ?? 0);
+
+  return {
+    total_revenue: total,
+    subscription_revenue: subscription,
+    one_time_revenue: oneTime,
+    pending_count: pending,
+    failed_count: failed,
+    this_month,
+    last_month,
+    monthly_data,
+  };
+}
 
 const PARENT_NOTIFICATIONS = [
   {
     id: "pn1",
     user_id: "p1",
     type: "progress_milestone",
-    title: "Liam reached a milestone! 🏆",
+    title: "Liam reached a milestone",
     message: "Liam Hassan completed 50% of Web Development",
     is_read: false,
     created_at: "2025-04-27T10:00:00Z",
@@ -434,7 +693,7 @@ const PARENT_NOTIFICATIONS = [
     id: "pn2",
     user_id: "p1",
     type: "course_complete",
-    title: "Course Completed! 🎉",
+    title: "Course Completed",
     message: "Liam Hassan completed Scratch Programming",
     is_read: false,
     created_at: "2025-04-25T09:00:00Z",
@@ -521,6 +780,7 @@ const INSTRUCTOR_STUDENTS = [
     last_active: "2025-04-27T10:00:00Z",
     assignments_pending: 1,
     assignments_completed: 2,
+    admission_no: "KIT/26/001",
   },
   {
     id: "s2",
@@ -534,6 +794,7 @@ const INSTRUCTOR_STUDENTS = [
     last_active: "2025-04-25T09:00:00Z",
     assignments_pending: 2,
     assignments_completed: 0,
+    admission_no: "KIT/26/002",
   },
   {
     id: "s3",
@@ -547,6 +808,7 @@ const INSTRUCTOR_STUDENTS = [
     last_active: "2025-04-26T11:00:00Z",
     assignments_pending: 0,
     assignments_completed: 3,
+    admission_no: "KIT/26/003",
   },
 ];
 
@@ -673,51 +935,6 @@ const INSTRUCTOR_NOTIFICATIONS = [
   },
 ];
 
-const INSTRUCTOR_CONVERSATIONS = [
-  {
-    id: "conv_i1_s1",
-    participant_id: "s1",
-    participant_name: "Liam Hassan",
-    participant_role: "student",
-    participant_initial: "L",
-    last_message: "I am really enjoying the course!",
-    last_message_time: "2025-04-27T09:05:00Z",
-    unread_count: 0,
-  },
-  {
-    id: "conv_i1_s2",
-    participant_id: "s2",
-    participant_name: "Aisha Hassan",
-    participant_role: "student",
-    participant_initial: "A",
-    last_message: "When is the next assignment due?",
-    last_message_time: "2025-04-26T13:00:00Z",
-    unread_count: 1,
-  },
-  {
-    id: "conv_i1_s3",
-    participant_id: "s3",
-    participant_name: "Emeka Obi",
-    participant_role: "student",
-    participant_initial: "E",
-    last_message: "Thank you for the feedback!",
-    last_message_time: "2025-04-25T10:00:00Z",
-    unread_count: 0,
-  },
-];
-
-const INSTRUCTOR_MESSAGES = {
-  conv_i1_s1: [
-    { id: "mi-s1-1", sender_id: "s1", receiver_id: "i1", message: "Hi Ms. Sarah! I am really enjoying the course!", file_url: null, created_at: "2025-04-27T09:05:00Z" },
-  ],
-  conv_i1_s2: [
-    { id: "mi1", sender_id: "s2", receiver_id: "i1", message: "Hi Ms. Sarah! When is the next assignment due?", file_url: null, created_at: "2025-04-26T13:00:00Z" },
-    { id: "mi2", sender_id: "i1", receiver_id: "s2", message: "Hi Aisha! The next assignment is due May 15th. Let me know if you have questions!", file_url: null, created_at: "2025-04-26T13:05:00Z" },
-  ],
-  conv_i1_s3: [
-    { id: "mi-s3-1", sender_id: "s3", receiver_id: "i1", message: "Thank you for the feedback!", file_url: null, created_at: "2025-04-25T10:00:00Z" },
-  ],
-};
 
 const CERTIFICATES = [
   {
@@ -780,10 +997,26 @@ const ADMIN_USERS = [
   { id: "u2", role: "instructor", name: "Ms. Sarah Aliyu", email: "instructor@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-01-15T00:00:00Z" },
   { id: "u3", role: "instructor", name: "Mr. Ahmed Bello", email: "ahmed@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-02-01T00:00:00Z" },
   { id: "u4", role: "parent", name: "Mrs. Fatima Hassan", email: "parent@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-02-15T00:00:00Z" },
-  { id: "u5", role: "student", name: "Liam Hassan", age: 12, email: "student@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-02-15T00:00:00Z" },
-  { id: "u6", role: "student", name: "Aisha Hassan", age: 9, email: "aisha@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-03-01T00:00:00Z" },
-  { id: "u7", role: "student", name: "Emeka Obi", age: 11, email: "emeka@kidsintech.school", status: "inactive", language_preference: "en", created_at: "2024-03-15T00:00:00Z" },
+  { id: "u5", role: "student", name: "Liam Hassan", age: 12, admission_no: "KIT/26/001", email: "student@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-02-15T00:00:00Z" },
+  { id: "u6", role: "student", name: "Aisha Hassan", age: 9, admission_no: "KIT/26/002", email: "aisha@kidsintech.school", status: "active", language_preference: "en", created_at: "2024-03-01T00:00:00Z" },
+  { id: "u7", role: "student", name: "Emeka Obi", age: 11, admission_no: "KIT/26/003", email: "emeka@kidsintech.school", status: "inactive", language_preference: "en", created_at: "2024-03-15T00:00:00Z" },
+  { id: "u_amina", role: "admin", name: "Amina Ibrahim", email: "amina@gmail.com", status: "active", permissions: ["users"], language_preference: "en", must_reset_password: true, created_at: new Date().toISOString() },
 ];
+
+// Pre-seeded force-reset demo. Logging in as amina@gmail.com with the
+// default password lands on /force-reset-password without anyone needing to
+// run the admin "Add User" flow first.
+ADMIN_CREATED_USERS.push({
+  id: "u_amina",
+  email: "amina@gmail.com",
+  name: "Amina Ibrahim",
+  role: "admin",
+  status: "active",
+  permissions: ["users"],
+  must_reset_password: true,
+  created_at: new Date().toISOString(),
+});
+FORCE_RESET_EMAILS.add("amina@gmail.com");
 
 const ADMIN_COURSES = [
   { id: "c1", title: "Scratch Programming", description: "Visual programming for beginners", price: 15000, payment_type: "subscription", instructor_id: "i1", instructor_name: "Ms. Sarah Aliyu", students_count: 2, modules_count: 3, is_published: true, completion_rate: 72, revenue: 45000, thumbnail_url: null, created_at: "2024-01-20T00:00:00Z" },
@@ -821,15 +1054,6 @@ const ADMIN_ANALYTICS = {
     { name: "One-time", value: 20000, fill: "#1a2234" },
   ],
 };
-
-// Cross-parent payment history for admin. Reuses the per-parent shape so the
-// existing ReceiptModal works unchanged.
-const ADMIN_PAYMENTS = [
-  { id: "pay1", parent_id: "p1", parent_name: "Mrs. Fatima Hassan", student_id: "s1", student_name: "Liam Hassan", amount: 15000, type: "subscription", status: "paid", paystack_ref: "PSK_123456", course_title: "Scratch Programming", created_at: "2025-04-01T00:00:00Z" },
-  { id: "pay2", parent_id: "p1", parent_name: "Mrs. Fatima Hassan", student_id: "s1", student_name: "Liam Hassan", amount: 20000, type: "one_time", status: "paid", paystack_ref: "PSK_234567", course_title: "Web Development", created_at: "2025-03-15T00:00:00Z" },
-  { id: "pay3", parent_id: "p1", parent_name: "Mrs. Fatima Hassan", student_id: "s2", student_name: "Aisha Hassan", amount: 15000, type: "subscription", status: "paid", paystack_ref: "PSK_345678", course_title: "Scratch Programming", created_at: "2025-03-01T00:00:00Z" },
-  { id: "pay4", parent_id: "p1", parent_name: "Mrs. Fatima Hassan", student_id: "s1", student_name: "Liam Hassan", amount: 25000, type: "subscription", status: "pending", paystack_ref: "PSK_456789", course_title: "Robotics Basics", created_at: "2025-04-20T00:00:00Z" },
-];
 
 const ADMIN_ACTIVITY_LOG = [
   { id: "log1", user_name: "Admin User", user_role: "admin", action: "created_user", description: "Created instructor account for Ms. Sarah Aliyu", ip: "192.168.1.1", timestamp: "2025-04-27T10:00:00Z" },
@@ -875,24 +1099,86 @@ const ADMIN_NOTIFICATIONS_SEED = [
 export const handlers = [
   // ── Auth ────────────────────────────────────────────────────────────────
   http.post("*/login", async ({ request }) => {
-    const { email, password } = await request.json();
+    const body = await request.json();
+    // Auth API now sends `email` as a generic identifier — it can be an
+    // email address or a KIT/YY/XXX admission number depending on which
+    // role tab the user picked on the login page.
+    const identifier = body.email ?? body.identifier ?? "";
+    const password = body.password ?? "";
+    const isAdmissionNo = /^KIT\/\d{2}\/\d{3}$/i.test(identifier);
+    const normalisedAdmission = identifier.toUpperCase();
 
-    // First-login flow for admin-created accounts. Anyone in the force-reset
-    // set who supplies the default password gets a temp_token instead of a
-    // real session. NextAuth's authorize() surfaces the flag through the JWT
-    // callback so DashboardLayout's ForceResetGuard redirects them.
+    // Force-reset flow for admin-provisioned student logins (admission_no).
     if (
-      FORCE_RESET_EMAILS.has(email) &&
+      isAdmissionNo &&
+      FORCE_RESET_ADMISSION_NOS.has(normalisedAdmission) &&
       password === DEFAULT_NEW_USER_PASSWORD
     ) {
-      const created =
-        ADMIN_CREATED_USERS.find((u) => u.email === email) ??
-        ADMIN_USERS.find((u) => u.email === email);
+      const created = ADMIN_CREATED_USERS.find(
+        (u) => u.admission_no === normalisedAdmission
+      );
       if (created) {
         return HttpResponse.json(
           {
             must_reset_password: true,
-            temp_token: `temp_${email}`,
+            temp_token: `temp_${normalisedAdmission}`,
+            user: {
+              id: created.id,
+              admission_no: created.admission_no,
+              email: created.email ?? null,
+              role: "student",
+              name: created.name,
+              language_preference: "en",
+            },
+          },
+          { status: 200 }
+        );
+      }
+    }
+
+    // Student login with admission number — seeded entries.
+    if (isAdmissionNo) {
+      const student = ADMISSION_NUMBERS[normalisedAdmission];
+      if (student && password === student.password) {
+        return HttpResponse.json(
+          {
+            user: {
+              id: student.id,
+              admission_no: student.admission_no,
+              email: student.email,
+              role: "student",
+              name: student.name,
+              language_preference: "en",
+              must_reset_password: false,
+            },
+            token: "mock-jwt-student",
+          },
+          { status: 200 }
+        );
+      }
+      return HttpResponse.json(
+        { error: "Invalid admission number or password" },
+        { status: 401 }
+      );
+    }
+
+    // First-login flow for admin-created (non-student) accounts. Anyone in
+    // the force-reset set who supplies the default password gets a
+    // temp_token instead of a real session. NextAuth's authorize() surfaces
+    // the flag through the JWT callback so DashboardLayout's
+    // ForceResetGuard redirects them.
+    if (
+      FORCE_RESET_EMAILS.has(identifier) &&
+      password === DEFAULT_NEW_USER_PASSWORD
+    ) {
+      const created =
+        ADMIN_CREATED_USERS.find((u) => u.email === identifier) ??
+        ADMIN_USERS.find((u) => u.email === identifier);
+      if (created) {
+        return HttpResponse.json(
+          {
+            must_reset_password: true,
+            temp_token: `temp_${identifier}`,
             user: {
               id: created.id,
               email: created.email,
@@ -906,9 +1192,9 @@ export const handlers = [
       }
     }
 
-    // Normal credential check.
+    // Normal credential check (email path — admin/instructor/parent).
     const match = MOCK_CREDENTIALS.find(
-      (c) => c.email === email && c.password === password
+      (c) => c.email === identifier && c.password === password
     );
     if (match) {
       return HttpResponse.json(
@@ -916,6 +1202,7 @@ export const handlers = [
           user: {
             id: match.id,
             email: match.email,
+            admission_no: ADMISSION_BY_USER_ID[match.id] ?? null,
             role: match.role,
             name: match.name,
             language_preference: "en",
@@ -988,23 +1275,86 @@ export const handlers = [
   http.get("*/parents/me/children", () => HttpResponse.json(PARENT_CHILDREN)),
 
   // ── Payments ────────────────────────────────────────────────────────────
-  http.get("*/payments", () => HttpResponse.json(PAYMENTS)),
+  http.get("*/payments/stats", () => HttpResponse.json(paymentStats())),
 
-  http.post("*/paystack/initiate", async () =>
-    HttpResponse.json({
-      access_code: "mock_access",
-      reference: "mock_ref_123",
-      authorization_url: "#",
-    })
-  ),
+  http.get("*/payments/:id/receipt", ({ params }) => {
+    const p = PAYMENTS_DB.find((x) => x.id === params.id);
+    if (!p) return HttpResponse.json({ error: "Not found" }, { status: 404 });
+    return HttpResponse.json({
+      ...p,
+      receipt_number: `RCP-${p.id.toUpperCase()}`,
+    });
+  }),
 
-  http.post("*/paystack/verify", async () =>
-    HttpResponse.json({
+  http.get("*/payments", ({ request }) => {
+    const url = new URL(request.url);
+    const parentId = url.searchParams.get("parent_id");
+    const studentId = url.searchParams.get("student_id");
+    let rows = PAYMENTS_DB;
+    if (parentId) rows = rows.filter((p) => p.parent_id === parentId);
+    if (studentId) rows = rows.filter((p) => p.student_id === studentId);
+    return HttpResponse.json(rows);
+  }),
+
+  http.get("*/subscriptions", () => HttpResponse.json(SUBSCRIPTION_PLANS)),
+
+  http.post("*/subscriptions/cancel", async ({ request }) => {
+    const body = await request.json().catch(() => ({}));
+    const plan = SUBSCRIPTION_PLANS.find((p) => p.id === body.plan_id);
+    if (plan) plan.status = "cancelled";
+    return HttpResponse.json({ success: true, plan });
+  }),
+
+  http.post("*/paystack/initiate", async () => {
+    const ref = `PSK_${Date.now()}`;
+    return HttpResponse.json({
+      access_code: `mock_access_${Date.now()}`,
+      reference: ref,
+      authorization_url: "#mock_payment_page",
+    });
+  }),
+
+  http.post("*/paystack/verify", async ({ request }) => {
+    const body = await request.json().catch(() => ({}));
+    // Resolve course + parent so the persisted row carries display fields.
+    const course = COURSES.find((c) => c.id === body.course_id);
+    const child = PARENT_CHILDREN.find((c) => c.id === body.student_id);
+    const created = {
+      id: `pay_${Date.now()}`,
+      parent_id: body.parent_id ?? "p1",
+      parent_name: body.parent_name ?? "Mrs. Fatima Hassan",
+      student_id: body.student_id,
+      student_name: child?.name ?? body.student_name ?? "",
+      amount: Number(body.amount ?? course?.price ?? 0),
+      type: body.type ?? course?.payment_type ?? "one_time",
+      status: "paid",
+      paystack_ref: body.reference ?? `PSK_${Date.now()}`,
+      course_id: body.course_id,
+      course_title: course?.title ?? body.course_title ?? "",
+      created_at: new Date().toISOString(),
+      paid_at: new Date().toISOString(),
+    };
+    PAYMENTS_DB.unshift(created);
+
+    // Push a parent notification so the bell badge picks up the new payment
+    // on next /notifications fetch. Dropdown shows it via the type → icon map.
+    DYNAMIC_PARENT_NOTIFICATIONS.unshift({
+      id: `pn_pay_${Date.now()}`,
+      user_id: created.parent_id,
+      type: "payment_success",
+      title: "Payment Confirmed",
+      message: `₦${created.amount.toLocaleString("en-NG")} payment for ${created.course_title} was successful. Reference: ${created.paystack_ref}`,
+      is_read: false,
+      created_at: new Date().toISOString(),
+      link: "/parent/payments",
+    });
+
+    return HttpResponse.json({
       status: "success",
-      reference: "mock_ref_123",
-      amount: 15000,
-    })
-  ),
+      reference: created.paystack_ref,
+      payment: created,
+    });
+  }),
 
   // ── Instructor profile + course/student catalogs ───────────────────────
   http.get("*/instructors/me", () => HttpResponse.json(INSTRUCTOR_ME)),
@@ -1021,11 +1371,41 @@ export const handlers = [
     HttpResponse.json(INSTRUCTOR_ASSIGNMENTS)
   ),
 
-  // Submission feedback — stub. The real backend will mutate the underlying
-  // submission record; here we just acknowledge so the UI can update its
-  // local copy optimistically.
-  http.put("*/assignments/:id/feedback", async ({ request }) => {
-    await request.json().catch(() => ({}));
+  // Submission feedback. Mutates both the instructor submission record AND
+  // the student's view of the assignment so reloading either side reflects
+  // the grade + feedback consistently.
+  http.put("*/assignments/:id/feedback", async ({ params, request }) => {
+    const body = await request.json().catch(() => ({}));
+    const assignmentId = params.id;
+
+    // Update instructor-facing submission row.
+    const instructorAssignment = INSTRUCTOR_ASSIGNMENTS.find(
+      (a) => a.id === assignmentId
+    );
+    if (instructorAssignment) {
+      const sub = instructorAssignment.submissions.find(
+        (s) => s.id === body.submission_id
+      );
+      if (sub) {
+        sub.status = "reviewed";
+        sub.grade = body.grade;
+        sub.feedback = body.feedback;
+        sub.reviewed_at = body.reviewed_at ?? new Date().toISOString();
+        sub.reviewer_name = body.reviewer_name ?? "Instructor";
+      }
+    }
+
+    // Update student-facing assignment row so the Reviewed tab updates.
+    const studentAssignment = ASSIGNMENTS.find((a) => a.id === assignmentId);
+    if (studentAssignment) {
+      studentAssignment.status = "reviewed";
+      studentAssignment.grade = body.grade;
+      studentAssignment.feedback = body.feedback;
+      studentAssignment.reviewed_at =
+        body.reviewed_at ?? new Date().toISOString();
+      studentAssignment.reviewer_name = body.reviewer_name ?? "Instructor";
+    }
+
     return HttpResponse.json({ success: true });
   }),
 
@@ -1053,7 +1433,33 @@ export const handlers = [
 
   http.post("*/assignments", async ({ request }) => {
     const body = await request.json().catch(() => ({}));
-    return HttpResponse.json({ id: `a-${Date.now()}`, ...body });
+    // Resolve course_title from the in-memory instructor courses so the
+    // returned object is rich enough for the assignments list to render
+    // without an extra round trip.
+    const course = INSTRUCTOR_COURSES.find((c) => c.id === body.course_id);
+    const created = {
+      id: `a-${Date.now()}`,
+      ...body,
+      course_title: course?.title ?? body.course_title ?? "",
+      submissions: [],
+      created_at: new Date().toISOString(),
+    };
+    INSTRUCTOR_ASSIGNMENTS.unshift(created);
+    return HttpResponse.json(created);
+  }),
+
+  http.put("*/assignments/:id", async ({ request, params }) => {
+    const body = await request.json().catch(() => ({}));
+    const idx = INSTRUCTOR_ASSIGNMENTS.findIndex((a) => a.id === params.id);
+    const existing = idx >= 0 ? INSTRUCTOR_ASSIGNMENTS[idx] : null;
+    const updated = {
+      ...(existing ?? { id: params.id, submissions: [] }),
+      ...body,
+      id: params.id,
+      updated_at: new Date().toISOString(),
+    };
+    if (idx >= 0) INSTRUCTOR_ASSIGNMENTS[idx] = updated;
+    return HttpResponse.json(updated);
   }),
 
   // ── Courses + modules + lessons ─────────────────────────────────────────
@@ -1093,6 +1499,61 @@ export const handlers = [
   }),
 
   http.post("*/lessons/:id/complete", () => HttpResponse.json({ success: true })),
+
+  // Lesson edit — searches every module's lesson array and patches the row
+  // with the incoming body. Returns the updated record so the UI can swap
+  // its local copy without an extra GET.
+  http.put("*/lessons/:id", async ({ params, request }) => {
+    const body = await request.json().catch(() => ({}));
+    let updated = null;
+    for (const moduleId of Object.keys(INSTRUCTOR_MODULE_LESSONS)) {
+      const list = INSTRUCTOR_MODULE_LESSONS[moduleId];
+      const idx = list.findIndex((l) => l.id === params.id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...body, id: params.id };
+        updated = list[idx];
+        break;
+      }
+    }
+    if (!updated) {
+      // The legacy LESSONS table also serves the lesson viewer; fall through
+      // to a synthesized record so the optimistic UI keeps working.
+      updated = { id: params.id, ...body };
+    }
+    ADMIN_ACTIVITY_LOG.unshift({
+      id: `log_${Date.now()}`,
+      user_name: "Admin User",
+      user_role: "admin",
+      action: "edited_lesson",
+      description: `Edited lesson "${body.title ?? params.id}"`,
+      ip: "127.0.0.1",
+      timestamp: new Date().toISOString(),
+    });
+    return HttpResponse.json(updated);
+  }),
+
+  http.delete("*/lessons/:id", ({ params }) => {
+    let removed = null;
+    for (const moduleId of Object.keys(INSTRUCTOR_MODULE_LESSONS)) {
+      const list = INSTRUCTOR_MODULE_LESSONS[moduleId];
+      const idx = list.findIndex((l) => l.id === params.id);
+      if (idx >= 0) {
+        removed = list[idx];
+        list.splice(idx, 1);
+        break;
+      }
+    }
+    ADMIN_ACTIVITY_LOG.unshift({
+      id: `log_${Date.now()}`,
+      user_name: "Admin User",
+      user_role: "admin",
+      action: "deleted_lesson",
+      description: `Deleted lesson "${removed?.title ?? params.id}"`,
+      ip: "127.0.0.1",
+      timestamp: new Date().toISOString(),
+    });
+    return HttpResponse.json({ success: true });
+  }),
 
   // ── Assignments ─────────────────────────────────────────────────────────
   http.get("*/assignments", () => HttpResponse.json(ASSIGNMENTS)),
@@ -1152,7 +1613,35 @@ export const handlers = [
     // entry so the next login follows the normal path.
     const rawToken = body?.temp_token ?? body?.token;
     if (typeof rawToken === "string" && rawToken.startsWith("temp_")) {
-      const email = rawToken.replace(/^temp_/, "");
+      const identifier = rawToken.replace(/^temp_/, "");
+      const isAdmissionNo = /^KIT\/\d{2}\/\d{3}$/i.test(identifier);
+
+      if (isAdmissionNo) {
+        const admissionNo = identifier.toUpperCase();
+        FORCE_RESET_ADMISSION_NOS.delete(admissionNo);
+        const created = ADMIN_CREATED_USERS.find(
+          (u) => u.admission_no === admissionNo
+        );
+        if (created) created.must_reset_password = false;
+        const mirror = ADMIN_USERS.find(
+          (u) => u.admission_no === admissionNo
+        );
+        if (mirror) mirror.must_reset_password = false;
+        if (created && body.new_password) {
+          ADMISSION_NUMBERS[admissionNo] = {
+            admission_no: admissionNo,
+            password: body.new_password,
+            role: "student",
+            name: created.name,
+            id: created.id,
+            email: created.email ?? null,
+          };
+          ADMISSION_BY_USER_ID[created.id] = admissionNo;
+        }
+        return HttpResponse.json({ success: true });
+      }
+
+      const email = identifier;
       FORCE_RESET_EMAILS.delete(email);
       const created = ADMIN_CREATED_USERS.find((u) => u.email === email);
       if (created) created.must_reset_password = false;
@@ -1184,37 +1673,118 @@ export const handlers = [
     return HttpResponse.json({ ok: true, ...body });
   }),
 
+  // Persists the user's UI language. Source of truth on the client is the
+  // auth store (localStorage-backed via zustand persist); this round-trip
+  // lets us prove the wire format with the real backend later.
+  http.put("*/user/language", async ({ request }) => {
+    const body = await request.json().catch(() => ({}));
+    const { language_preference } = body;
+    if (language_preference === "en" || language_preference === "ha") {
+      return HttpResponse.json({ success: true, language_preference });
+    }
+    return HttpResponse.json(
+      { error: "Invalid language code" },
+      { status: 400 }
+    );
+  }),
+
   // ── Chat ────────────────────────────────────────────────────────────────
-  // The conversations feed is per-user. Instructors see their student
-  // conversations; everyone else falls back to the original student-side
-  // feed so existing callers stay unchanged.
+  // Per-user conversation list. The store is keyed by viewer id (s1, i1,
+  // p1, admin1, …) so each side sees the right participant projection.
   http.get("*/conversations", ({ request }) => {
     const url = new URL(request.url);
     const uid = url.searchParams.get("user_id");
-    if (uid === "i1") return HttpResponse.json(INSTRUCTOR_CONVERSATIONS);
-    return HttpResponse.json(CONVERSATIONS);
+    if (!uid) return HttpResponse.json([]);
+    return HttpResponse.json(CONVERSATIONS_BY_USER[uid] ?? []);
   }),
 
   http.get("*/messages", ({ request }) => {
     const url = new URL(request.url);
     const convId = url.searchParams.get("conversation_id");
     if (!convId) return HttpResponse.json([]);
-    if (INSTRUCTOR_MESSAGES[convId]) {
-      return HttpResponse.json(INSTRUCTOR_MESSAGES[convId]);
-    }
-    return HttpResponse.json(CONV_MESSAGES);
+    return HttpResponse.json(CHAT_MESSAGES[convId] ?? []);
   }),
 
+  // Persists the new message into CHAT_MESSAGES and updates last_message /
+  // last_message_time on every viewer's conversation entry so all sides
+  // re-render consistently after a refresh.
   http.post("*/messages", async ({ request }) => {
-    const body = await request.json();
-    return HttpResponse.json({
-      id: `m-${Date.now()}`,
+    const body = await request.json().catch(() => ({}));
+    const convId = body.conversation_id;
+    const newMsg = {
+      id: `msg_${Date.now()}`,
       sender_id: body.sender_id,
       receiver_id: body.receiver_id,
-      message: body.message,
+      message: body.message ?? "",
       file_url: body.file_url ?? null,
+      file_type: body.file_type ?? null,
       created_at: new Date().toISOString(),
+      read: false,
+    };
+    if (convId) {
+      if (!CHAT_MESSAGES[convId]) CHAT_MESSAGES[convId] = [];
+      CHAT_MESSAGES[convId].push(newMsg);
+      const preview = newMsg.message || (newMsg.file_type ? "Attachment" : "");
+      for (const viewer of Object.keys(CONVERSATIONS_BY_USER)) {
+        const list = CONVERSATIONS_BY_USER[viewer];
+        const row = list.find((c) => c.id === convId);
+        if (!row) continue;
+        row.last_message = preview;
+        row.last_message_time = newMsg.created_at;
+        if (viewer !== body.sender_id) {
+          row.unread_count = (row.unread_count ?? 0) + 1;
+        }
+      }
+    }
+    return HttpResponse.json(newMsg);
+  }),
+
+  http.put("*/messages/read", async ({ request }) => {
+    const body = await request.json().catch(() => ({}));
+    const convId = body.conversation_id;
+    if (convId && CHAT_MESSAGES[convId]) {
+      CHAT_MESSAGES[convId] = CHAT_MESSAGES[convId].map((m) => ({
+        ...m,
+        read: true,
+      }));
+    }
+    if (convId) {
+      for (const viewer of Object.keys(CONVERSATIONS_BY_USER)) {
+        const row = CONVERSATIONS_BY_USER[viewer].find(
+          (c) => c.id === convId
+        );
+        if (row) row.unread_count = 0;
+      }
+    }
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Admin chat monitor — flat list across every conversation.
+  http.get("*/admin/chat/all-conversations", () => {
+    const rows = Object.entries(CHAT_MESSAGES).map(([convId, msgs]) => {
+      const meta = CONVERSATION_PARTICIPANTS[convId] ?? {
+        participants: [],
+        roles: [],
+      };
+      const last = msgs[msgs.length - 1] ?? null;
+      return {
+        conv_id: convId,
+        participants: meta.participants,
+        roles: meta.roles,
+        last_message: last
+          ? last.message || (last.file_type ? "Attachment" : "")
+          : "",
+        last_message_time: last?.created_at ?? null,
+        message_count: msgs.length,
+        unread_count: msgs.filter((m) => !m.read).length,
+      };
     });
+    rows.sort(
+      (a, b) =>
+        new Date(b.last_message_time ?? 0) -
+        new Date(a.last_message_time ?? 0)
+    );
+    return HttpResponse.json(rows);
   }),
 
   // ── Admin ───────────────────────────────────────────────────────────────
@@ -1233,7 +1803,7 @@ export const handlers = [
 
   http.get("*/admin/payments", () =>
     HttpResponse.json({
-      payments: ADMIN_PAYMENTS,
+      payments: PAYMENTS_DB,
       total_revenue: ADMIN_STATS.total_revenue,
     })
   ),
@@ -1279,6 +1849,11 @@ export const handlers = [
   http.post("*/admin/users", async ({ request }) => {
     const body = await request.json().catch(() => ({}));
     const id = `u-${Date.now()}`;
+    const isStudent = (body.role ?? "student") === "student";
+    // Students get an auto-generated admission number; other roles continue
+    // to authenticate with email. The admin form passes an optional contact
+    // email for students which we store for notifications.
+    const admissionNo = isStudent ? generateAdmissionNumber() : null;
     const newUser = {
       id,
       role: body.role ?? "student",
@@ -1286,6 +1861,7 @@ export const handlers = [
       email: body.email ?? "",
       age: body.age,
       programme_track: body.programme_track,
+      admission_no: admissionNo,
       status: "active",
       language_preference: "en",
       created_at: new Date().toISOString(),
@@ -1293,7 +1869,11 @@ export const handlers = [
     };
     ADMIN_USERS.push(newUser);
     ADMIN_CREATED_USERS.push(newUser);
-    if (newUser.email) FORCE_RESET_EMAILS.add(newUser.email);
+    if (isStudent && admissionNo) {
+      FORCE_RESET_ADMISSION_NOS.add(admissionNo);
+    } else if (newUser.email) {
+      FORCE_RESET_EMAILS.add(newUser.email);
+    }
 
     // Drain the matching pending enrollment + emit a parent notification so
     // the parent sees "Login details created for [child name]".
@@ -1302,12 +1882,15 @@ export const handlers = [
       if (idx >= 0) {
         const pending = PENDING_ENROLLMENTS[idx];
         PENDING_ENROLLMENTS.splice(idx, 1);
+        const loginCredential = admissionNo
+          ? `Admission Number: ${admissionNo}`
+          : `Login email: ${newUser.email}`;
         DYNAMIC_PARENT_NOTIFICATIONS.unshift({
           id: `pn-${Date.now()}`,
           user_id: "p1",
           type: "account_created",
-          title: "Child Account Created! 🎉",
-          message: `Login details have been created for ${pending.child_name}. Default password: ${DEFAULT_NEW_USER_PASSWORD}. They will be prompted to set a new password on first login.`,
+          title: "Child Account Created",
+          message: `Login details have been created for ${pending.child_name}. ${loginCredential}. Default password: ${DEFAULT_NEW_USER_PASSWORD}. They will be prompted to set a new password on first login.`,
           is_read: false,
           created_at: new Date().toISOString(),
           link: "/parent/children",
@@ -1319,6 +1902,14 @@ export const handlers = [
       ...newUser,
       password: DEFAULT_NEW_USER_PASSWORD,
     });
+  }),
+
+  // Preview the next admission number so the admin "Add User" modal can
+  // display KIT/YY/XXX before the form is submitted. Does NOT advance the
+  // counter — only POST /admin/users does that.
+  http.get("*/admin/next-admission-no", () => {
+    const num = String(admissionCounter).padStart(3, "0");
+    return HttpResponse.json({ next: `KIT/${ADMISSION_YEAR}/${num}` });
   }),
 
   http.post("*/admin/users/deactivate", async ({ request }) => {
@@ -1390,7 +1981,7 @@ export const handlers = [
         id: `an-${Date.now()}`,
         user_id: "admin1",
         type: body.type ?? "system",
-        title: (body.priority ? "🔔 " : "") + (body.title ?? "Notification"),
+        title: body.title ?? "Notification",
         message: body.message ?? "",
         is_read: false,
         created_at: new Date().toISOString(),

@@ -4,6 +4,7 @@ import SessionProviderWrapper from "@/_components/providers/SessionProviderWrapp
 import { ThemeProvider } from "@/_components/providers/ThemeProvider";
 import { MSWProvider } from "@/_components/providers/MSWProvider";
 import { MountedProvider } from "@/_components/providers/MountedProvider";
+import { LanguageProvider } from "@/_lib/i18n/LanguageContext";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -47,14 +48,16 @@ export default function RootLayout({ children }) {
     >
       <body className="min-h-screen font-sans">
         <ThemeProvider>
-          <MSWProvider>
-            <MountedProvider>
-              <SessionProviderWrapper>
-                {children}
-                <Toaster richColors position="top-right" />
-              </SessionProviderWrapper>
-            </MountedProvider>
-          </MSWProvider>
+          <LanguageProvider>
+            <MSWProvider>
+              <MountedProvider>
+                <SessionProviderWrapper>
+                  {children}
+                  <Toaster richColors position="top-right" />
+                </SessionProviderWrapper>
+              </MountedProvider>
+            </MSWProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

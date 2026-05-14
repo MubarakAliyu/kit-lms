@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { differenceInDays, formatDistanceToNow } from "date-fns";
-import { ChevronDown, ClipboardList } from "lucide-react";
+import { Check, ChevronDown, ClipboardList, Pencil, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { getInstructorAssignments } from "@/_lib/api/instructor";
 import AssignmentReviewModal from "@/_components/instructor/AssignmentReviewModal";
+import AddAssignmentModal from "@/_components/instructor/AddAssignmentModal";
+import EditAssignmentModal from "@/_components/instructor/EditAssignmentModal";
 
 const TABS = [
   { key: "all", label: "All" },
@@ -29,13 +32,27 @@ function summarize(assignment) {
 }
 
 export default function InstructorAssignmentsPage() {
+  return (
+    <Suspense fallback={null}>
+      <InstructorAssignmentsInner />
+    </Suspense>
+  );
+}
+
+function InstructorAssignmentsInner() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("all");
   const [openId, setOpenId] = useState(null);
   const [reviewing, setReviewing] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filterAssignmentId = searchParams.get("id");
+  const cardRefs = useRef({});
 
   useEffect(() => {
     setLoading(true);
@@ -48,6 +65,25 @@ export default function InstructorAssignmentsPage() {
       })
       .finally(() => setLoading(false));
   }, [pathname]);
+
+  // When the user lands here from /instructor/courses with ?id=…, auto-expand
+  // the target card, scroll it into view, and flash an amber glow so they can
+  // see which assignment they navigated to.
+  useEffect(() => {
+    if (!filterAssignmentId || loading) return;
+    const exists = assignments.some((a) => a.id === filterAssignmentId);
+    if (!exists) return;
+    setOpenId(filterAssignmentId);
+    setHighlightId(filterAssignmentId);
+    requestAnimationFrame(() => {
+      cardRefs.current[filterAssignmentId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    const t = setTimeout(() => setHighlightId(null), 2200);
+    return () => clearTimeout(t);
+  }, [filterAssignmentId, assignments, loading]);
 
   const visible = useMemo(() => {
     if (tab === "all") return assignments;
@@ -77,6 +113,17 @@ export default function InstructorAssignmentsPage() {
     );
   }
 
+  function handleCreated(newAssignment) {
+    setAssignments((prev) => [newAssignment, ...prev]);
+  }
+
+  function handleUpdated(updated) {
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+    );
+    toast.success("Assignment updated");
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -84,13 +131,25 @@ export default function InstructorAssignmentsPage() {
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col gap-6"
     >
-      <header>
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-          Assignments
-        </h1>
-        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          Review submissions and leave feedback per student.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+            Assignments
+          </h1>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            Review submissions and leave feedback per student.
+          </p>
+        </div>
+        <motion.button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#059669]"
+        >
+          <Plus className="h-4 w-4" strokeWidth={2.5} />
+          Create Assignment
+        </motion.button>
       </header>
 
       <nav role="tablist" className="flex gap-1 border-b border-[var(--border-color)]">
@@ -139,7 +198,12 @@ export default function InstructorAssignmentsPage() {
               key={a.id}
               assignment={a}
               expanded={openId === a.id}
+              highlighted={highlightId === a.id}
+              cardRef={(node) => {
+                if (node) cardRefs.current[a.id] = node;
+              }}
               onToggle={() => setOpenId((prev) => (prev === a.id ? null : a.id))}
+              onEdit={() => setEditing(a)}
               onReview={(submission) =>
                 setReviewing({ assignment: a, submission })
               }
@@ -155,72 +219,127 @@ export default function InstructorAssignmentsPage() {
         onClose={() => setReviewing(null)}
         onReviewed={handleReviewed}
       />
+
+      <AddAssignmentModal
+        isOpen={showCreate}
+        onClose={() => setShowCreate(false)}
+        showModuleSelector
+        onSuccess={handleCreated}
+      />
+
+      <EditAssignmentModal
+        isOpen={!!editing}
+        assignment={editing}
+        onClose={() => setEditing(null)}
+        onSuccess={handleUpdated}
+      />
     </motion.div>
   );
 }
 
 // ── Assignment card ──────────────────────────────────────────────────────
 
-function AssignmentCard({ assignment, expanded, onToggle, onReview }) {
+function AssignmentCard({
+  assignment,
+  expanded,
+  highlighted,
+  cardRef,
+  onToggle,
+  onEdit,
+  onReview,
+}) {
   const meta = deadlineMeta(assignment.deadline);
   const summary = summarize(assignment);
   const reviewedPct =
     summary.total > 0 ? Math.round((summary.reviewed / summary.total) * 100) : 0;
 
   return (
-    <li className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full flex-col gap-3 p-5 text-left transition-colors hover:bg-[var(--bg-secondary)]/40"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-bold text-[var(--text-primary)]">
-                {assignment.title}
-              </h3>
-              <span className="rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
-                {assignment.course_title}
-              </span>
+    <motion.li
+      ref={cardRef}
+      animate={
+        highlighted
+          ? {
+              boxShadow: [
+                "0 0 0 0 rgba(245,158,11,0)",
+                "0 0 0 6px rgba(245,158,11,0.35)",
+                "0 0 0 0 rgba(245,158,11,0)",
+              ],
+            }
+          : { boxShadow: "0 0 0 0 rgba(245,158,11,0)" }
+      }
+      transition={{ duration: 2 }}
+      className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]"
+    >
+      <div className="flex items-start justify-between gap-3 p-5">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex flex-1 flex-col gap-3 text-left"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-bold text-[var(--text-primary)]">
+                  {assignment.title}
+                </h3>
+                {assignment.course_title && (
+                  <span className="rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
+                    {assignment.course_title}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-[var(--text-secondary)] font-mono-ui">
+                Due {assignment.deadline}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-[var(--text-secondary)] font-mono-ui">
-              Due {assignment.deadline}
-            </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
+                style={{ color: meta.color, backgroundColor: meta.bg }}
+              >
+                {meta.label}
+              </span>
+              <motion.span
+                animate={{ rotate: expanded ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+                className="grid h-7 w-7 place-items-center rounded-full bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </motion.span>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span
-              className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-              style={{ color: meta.color, backgroundColor: meta.bg }}
-            >
-              {meta.label}
-            </span>
-            <motion.span
-              animate={{ rotate: expanded ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-              className="grid h-7 w-7 place-items-center rounded-full bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
-            >
-              <ChevronDown className="h-4 w-4" />
-            </motion.span>
-          </div>
-        </div>
 
-        <div>
-          <p className="mb-1.5 text-xs text-[var(--text-secondary)] font-mono-ui">
-            {summary.total} submitted · {summary.reviewed} reviewed ·{" "}
-            {summary.pending} pending
-          </p>
-          <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-secondary)]">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${reviewedPct}%` }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="h-full bg-[#10B981]"
-            />
+          <div>
+            <p className="mb-1.5 text-xs text-[var(--text-secondary)] font-mono-ui">
+              {summary.total} submitted · {summary.reviewed} reviewed ·{" "}
+              {summary.pending} pending
+            </p>
+            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-secondary)]">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${reviewedPct}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="h-full bg-[#10B981]"
+              />
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        <motion.button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit?.();
+          }}
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.95 }}
+          aria-label="Edit assignment"
+          className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[var(--border-color)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:border-[#10B981] hover:text-[#10B981]"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </motion.button>
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded && (
@@ -238,7 +357,7 @@ function AssignmentCard({ assignment, expanded, onToggle, onReview }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </li>
+    </motion.li>
   );
 }
 
@@ -287,10 +406,11 @@ function SubmissionRow({ submission, onReview }) {
             </span>
           )}
           <span
-            className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
             style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)" }}
           >
-            Reviewed ✓
+            Reviewed
+            <Check className="h-3 w-3" strokeWidth={3} />
           </span>
         </>
       ) : (

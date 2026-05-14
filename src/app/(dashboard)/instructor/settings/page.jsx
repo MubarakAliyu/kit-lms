@@ -19,9 +19,9 @@ import {
   X,
 } from "lucide-react";
 import PasswordStrengthBar from "@/_components/auth/PasswordStrengthBar";
+import LanguageTab from "@/_components/settings/LanguageTab";
 import { getInstructorProfile } from "@/_lib/api/instructor";
 import { changePassword, updateProfile } from "@/_lib/api/settings";
-import { useAuthStore } from "@/_store/authStore";
 
 const TABS = [
   { key: "profile", label: "Profile", icon: User },
@@ -59,7 +59,12 @@ export default function InstructorSettingsPage() {
             >
               {tab === "profile" && <ProfileTab />}
               {tab === "security" && <SecurityTab />}
-              {tab === "language" && <LanguageTab />}
+              {tab === "language" && (
+                <div className="flex flex-col gap-6">
+                  <LanguageTab />
+                  <ThemePicker />
+                </div>
+              )}
               {tab === "notifications" && <NotificationsTab />}
             </motion.div>
           </AnimatePresence>
@@ -134,7 +139,7 @@ function ProfileTab() {
       await updateProfile(values);
       setProfile((prev) => (prev ? { ...prev, ...values } : prev));
       reset(values);
-      toast.success("Profile updated! ✓");
+      toast.success("Profile updated");
     } catch {
       toast.error("Couldn't update profile");
     }
@@ -255,7 +260,7 @@ function SecurityTab() {
         current_password: vals.current,
         new_password: vals.next,
       });
-      toast.success("Password updated! 🔒");
+      toast.success("Password updated");
       setVals({ current: "", next: "", confirm: "" });
     } catch {
       toast.error("Couldn't update password");
@@ -381,80 +386,8 @@ function passwordRequirements(vals) {
 }
 
 // ── Language ───────────────────────────────────────────────────────────────
-
-function LanguageTab() {
-  const { languagePreference, setLanguagePreference } = useAuthStore();
-  const [selected, setSelected] = useState(languagePreference || "en");
-
-  function handleSave() {
-    setLanguagePreference(selected);
-    toast.success("Language preference saved");
-  }
-
-  return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Language</h2>
-        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-          Choose the language you&apos;d like the LMS interface in.
-        </p>
-      </header>
-
-      <div className="flex flex-col gap-3">
-        <LanguageRadio
-          flag="🇬🇧"
-          label="English"
-          checked={selected === "en"}
-          onSelect={() => setSelected("en")}
-        />
-        <LanguageRadio
-          flag="🇳🇬"
-          label="Hausa"
-          checked={selected === "ha"}
-          onSelect={() => setSelected("ha")}
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={handleSave}
-        className="self-start rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
-      >
-        Save Preference
-      </button>
-
-      <ThemePicker />
-    </div>
-  );
-}
-
-function LanguageRadio({ flag, label, checked, onSelect }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onSelect}
-      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-        checked
-          ? "border-[#10B981] bg-[#10B981]/10"
-          : "border-[var(--border-color)] hover:bg-[var(--bg-secondary)]"
-      }`}
-    >
-      <span className="text-2xl">{flag}</span>
-      <span className="flex-1 font-semibold text-[var(--text-primary)]">{label}</span>
-      <span
-        className={`grid h-5 w-5 place-items-center rounded-full border-2 ${
-          checked
-            ? "border-[#10B981] bg-[#10B981]"
-            : "border-[var(--border-color)]"
-        }`}
-      >
-        {checked && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
-      </span>
-    </button>
-  );
-}
+// LanguageTab is shared from @/_components/settings/LanguageTab. ThemePicker
+// stays here because theme is a sibling preference scoped to this page.
 
 function ThemePicker() {
   const { theme, setTheme } = useTheme();

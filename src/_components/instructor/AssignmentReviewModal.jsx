@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatDistanceToNow } from "date-fns";
+import { useSession } from "next-auth/react";
 import {
   Download,
   ExternalLink,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { submitFeedback } from "@/_lib/api/instructor";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const GRADES = ["A+", "A", "B+", "B", "C", "D", "F"];
 
@@ -22,6 +24,8 @@ export default function AssignmentReviewModal({
   onClose,
   onReviewed,
 }) {
+  const { notify } = useLiveNotify();
+  const { data: session } = useSession();
   const [grade, setGrade] = useState("A");
   const [feedback, setFeedback] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -46,18 +50,28 @@ export default function AssignmentReviewModal({
       return;
     }
     setSubmitting(true);
+    const reviewedAt = new Date().toISOString();
+    const reviewerName = session?.user?.name ?? "Instructor";
     try {
       await submitFeedback(assignment.id, {
         submission_id: submission.id,
         grade,
         feedback: feedback.trim(),
+        reviewed_at: reviewedAt,
+        reviewer_name: reviewerName,
+        assignment_title: assignment.title,
+        student_id: submission.student_id,
       });
-      toast.success("Feedback submitted! ✓");
+      notify("feedback_submitted", {
+        student: submission.student_name ?? "student",
+      });
       onReviewed?.({
         assignmentId: assignment.id,
         submissionId: submission.id,
         grade,
         feedback: feedback.trim(),
+        reviewed_at: reviewedAt,
+        reviewer_name: reviewerName,
       });
       onClose?.();
     } catch {

@@ -65,7 +65,7 @@ export default function InstructorDashboardHome() {
         session.user.name ||
         session.user.email?.split("@")[0] ||
         "instructor";
-      toast.success(`Welcome back, ${shortName(fullName)}! 👩‍🏫`, {
+      toast.success(`Welcome back, ${shortName(fullName)}`, {
         description: `Logged in as ${session.user.email}`,
         duration: 3000,
       });
@@ -145,7 +145,7 @@ export default function InstructorDashboardHome() {
       <header>
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">
           {profile?.name
-            ? `Hi, ${shortName(profile.name)}! 👩‍🏫`
+            ? `Hi, ${shortName(profile.name)}`
             : "Instructor Dashboard"}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
@@ -352,7 +352,7 @@ function RecentSubmissions({ rows, onReview }) {
       {rows.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-10 text-center">
           <p className="text-sm font-semibold text-[var(--text-secondary)]">
-            No pending reviews 🎉
+            No pending reviews
           </p>
         </div>
       ) : (

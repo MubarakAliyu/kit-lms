@@ -129,6 +129,11 @@ export default function StudentDetailPanel({ student, onClose }) {
                   <p className="truncate text-base font-bold text-[var(--text-primary)]">
                     {student.name}
                   </p>
+                  {student.admission_no && (
+                    <p className="truncate font-mono text-xs font-semibold text-[#10B981]">
+                      Admission No: {student.admission_no}
+                    </p>
+                  )}
                   <p className="text-xs text-[var(--text-secondary)] font-mono-ui">
                     Age {student.age} · {student.programme_track}
                   </p>

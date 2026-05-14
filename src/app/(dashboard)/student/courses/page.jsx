@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { BookOpen, Search } from "lucide-react";
+import { BookOpen, CheckCircle, Clock, Search } from "lucide-react";
 import { getCourses } from "@/_lib/api/courses";
+import { getPayments } from "@/_lib/api/payments";
 import CourseThumbnail from "@/_components/ui/CourseThumbnail";
 
 const COURSE_GRADIENTS = {
@@ -19,17 +21,37 @@ function gradientFor(courseId) {
 }
 
 export default function CoursesPage() {
+  const { data: session } = useSession();
   const [courses, setCourses] = useState([]);
+  const [enrollments, setEnrollments] = useState({});
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const pathname = usePathname();
 
   useEffect(() => {
     setLoading(true);
-    getCourses()
-      .then(setCourses)
+    const studentId = session?.user?.id;
+    Promise.all([
+      getCourses(),
+      studentId
+        ? getPayments({ student_id: studentId }).catch(() => [])
+        : Promise.resolve([]),
+    ])
+      .then(([list, payments]) => {
+        setCourses(list ?? []);
+        // Map course_id → best status. Prefer paid over pending over failed.
+        const rank = { paid: 3, pending: 2, failed: 1 };
+        const map = {};
+        for (const p of payments ?? []) {
+          const cur = map[p.course_id];
+          if (!cur || (rank[p.status] ?? 0) > (rank[cur] ?? 0)) {
+            map[p.course_id] = p.status;
+          }
+        }
+        setEnrollments(map);
+      })
       .finally(() => setLoading(false));
-  }, [pathname]);
+  }, [pathname, session?.user?.id]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -60,7 +82,12 @@ export default function CoursesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((course, i) => (
-            <CourseCard key={course.id} course={course} index={i} />
+            <CourseCard
+              key={course.id}
+              course={course}
+              index={i}
+              enrollmentStatus={enrollments[course.id]}
+            />
           ))}
         </div>
       )}
@@ -68,7 +95,7 @@ export default function CoursesPage() {
   );
 }
 
-function CourseCard({ course, index }) {
+function CourseCard({ course, index, enrollmentStatus }) {
   const started = course.progress > 0;
 
   return (
@@ -110,15 +137,38 @@ function CourseCard({ course, index }) {
           </p>
         </div>
 
-        <Link
-          href={`/student/courses/${course.id}`}
-          className="mt-auto inline-flex items-center justify-center rounded-xl bg-[#10B981] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
-        >
-          {started ? "Continue" : "Start"}
-        </Link>
+        <div className="mt-auto flex items-center justify-between gap-2">
+          <EnrollmentStatusBadge status={enrollmentStatus} />
+          <Link
+            href={`/student/courses/${course.id}`}
+            className="inline-flex items-center justify-center rounded-xl bg-[#10B981] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
+          >
+            {started ? "Continue" : "Start"}
+          </Link>
+        </div>
       </div>
     </motion.article>
   );
+}
+
+function EnrollmentStatusBadge({ status }) {
+  if (status === "paid") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#10B981] font-mono-ui">
+        <CheckCircle className="h-3 w-3" strokeWidth={2.5} />
+        Enrolled
+      </span>
+    );
+  }
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-500 font-mono-ui">
+        <Clock className="h-3 w-3" strokeWidth={2.5} />
+        Payment Pending
+      </span>
+    );
+  }
+  return <span />;
 }
 
 function CoursesGridSkeleton() {

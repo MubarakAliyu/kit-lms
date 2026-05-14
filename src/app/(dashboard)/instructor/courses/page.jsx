@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronDown,
   ClipboardList,
+  Eye,
   FileText,
   Film,
   Layers,
   Link as LinkIcon,
   Loader2,
   Paperclip,
+  Pencil,
   Plus,
   Sparkles,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getInstructorCourses } from "@/_lib/api/instructor";
+import {
+  getInstructorAssignments,
+  getInstructorCourses,
+} from "@/_lib/api/instructor";
 import { getCourseModules } from "@/_lib/api/courses";
 import { apiClient } from "@/_lib/api/client";
 import CourseThumbnail from "@/_components/ui/CourseThumbnail";
@@ -25,6 +30,11 @@ import AddModuleModal from "@/_components/instructor/AddModuleModal";
 import AddLessonModal from "@/_components/instructor/AddLessonModal";
 import AddQuizModal from "@/_components/instructor/AddQuizModal";
 import AddAssignmentModal from "@/_components/instructor/AddAssignmentModal";
+import EditAssignmentModal from "@/_components/instructor/EditAssignmentModal";
+import EditLessonModal from "@/_components/editor/EditLessonModal";
+import LessonPreviewModal from "@/_components/editor/LessonPreviewModal";
+import DeleteLessonModal from "@/_components/editor/DeleteLessonModal";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const CONTENT_ICON = {
   video: Film,
@@ -35,22 +45,42 @@ const CONTENT_ICON = {
 
 export default function InstructorCoursesPage() {
   const [courses, setCourses] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [addModule, setAddModule] = useState(null); // courseId
+  const [editingAssignment, setEditingAssignment] = useState(null);
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getInstructorCourses()
-      .then(setCourses)
+    Promise.all([
+      getInstructorCourses(),
+      getInstructorAssignments().catch(() => []),
+    ])
+      .then(([courseList, assignmentList]) => {
+        setCourses(courseList ?? []);
+        setAssignments(assignmentList ?? []);
+      })
       .catch((err) => {
         console.warn("Courses fetch failed:", err.message);
         setError("Failed to load courses. Please refresh.");
       })
       .finally(() => setLoading(false));
   }, [pathname]);
+
+  function handleAssignmentUpdated(updated) {
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+    );
+    toast.success("Assignment updated");
+  }
+
+  function handleReviewSubmissions(assignment) {
+    router.push(`/instructor/assignments?id=${assignment.id}`);
+  }
 
   return (
     <motion.div
@@ -86,7 +116,10 @@ export default function InstructorCoursesPage() {
             <CourseSection
               key={course.id}
               course={course}
+              assignments={assignments}
               onAddModule={() => setAddModule(course.id)}
+              onEditAssignment={setEditingAssignment}
+              onReviewSubmissions={handleReviewSubmissions}
             />
           ))}
         </div>
@@ -98,13 +131,26 @@ export default function InstructorCoursesPage() {
         courseId={addModule}
         onCreated={() => toast.info("Refresh to see the new module")}
       />
+
+      <EditAssignmentModal
+        isOpen={!!editingAssignment}
+        assignment={editingAssignment}
+        onClose={() => setEditingAssignment(null)}
+        onSuccess={handleAssignmentUpdated}
+      />
     </motion.div>
   );
 }
 
 // ── Course section with module accordion ─────────────────────────────────
 
-function CourseSection({ course, onAddModule }) {
+function CourseSection({
+  course,
+  assignments,
+  onAddModule,
+  onEditAssignment,
+  onReviewSubmissions,
+}) {
   const [modules, setModules] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -177,6 +223,9 @@ function CourseSection({ course, onAddModule }) {
                 module={m}
                 courseTitle={course.title}
                 index={i}
+                assignment={assignments.find((a) => a.module_id === m.id)}
+                onEditAssignment={onEditAssignment}
+                onReviewSubmissions={onReviewSubmissions}
               />
             ))}
           </ul>
@@ -188,7 +237,14 @@ function CourseSection({ course, onAddModule }) {
 
 // ── Module accordion row ────────────────────────────────────────────────
 
-function ModuleRow({ module, courseTitle, index }) {
+function ModuleRow({
+  module,
+  courseTitle,
+  index,
+  assignment,
+  onEditAssignment,
+  onReviewSubmissions,
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -228,7 +284,13 @@ function ModuleRow({ module, courseTitle, index }) {
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="overflow-hidden"
           >
-            <ModuleBody module={module} courseTitle={courseTitle} />
+            <ModuleBody
+              module={module}
+              courseTitle={courseTitle}
+              assignment={assignment}
+              onEditAssignment={onEditAssignment}
+              onReviewSubmissions={onReviewSubmissions}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -256,7 +318,13 @@ function Pill({ children, tone, icon: Icon }) {
 
 // ── Module body (lessons + quiz + assignment) ───────────────────────────
 
-function ModuleBody({ module, courseTitle }) {
+function ModuleBody({
+  module,
+  courseTitle,
+  assignment,
+  onEditAssignment,
+  onReviewSubmissions,
+}) {
   const [lessons, setLessons] = useState([]);
   const [loadedLessons, setLoadedLessons] = useState(false);
   const [addLesson, setAddLesson] = useState(false);
@@ -264,6 +332,20 @@ function ModuleBody({ module, courseTitle }) {
   const [addAssignment, setAddAssignment] = useState(false);
   const [hasQuiz, setHasQuiz] = useState(!!module.quiz_id);
   const [hasAssignment, setHasAssignment] = useState(!!module.assignment_id);
+
+  const assignmentSummary = useMemo(() => {
+    const subs = assignment?.submissions ?? [];
+    return {
+      total: subs.length,
+      reviewed: subs.filter((s) => s.status === "reviewed").length,
+      submitted: subs.filter((s) => s.status === "submitted").length,
+    };
+  }, [assignment]);
+
+  const [editingLesson, setEditingLesson] = useState(null);
+  const [previewingLesson, setPreviewingLesson] = useState(null);
+  const [deletingLesson, setDeletingLesson] = useState(null);
+  const { notify } = useLiveNotify();
 
   useEffect(() => {
     setLoadedLessons(false);
@@ -280,6 +362,18 @@ function ModuleBody({ module, courseTitle }) {
     setLessons((list) => [...list, lesson]);
   }
 
+  function handleLessonSaved(updated) {
+    setLessons((list) =>
+      list.map((l) => (l.id === updated.id ? { ...l, ...updated } : l))
+    );
+    notify("lesson_saved", { title: updated.title });
+  }
+
+  function handleLessonDeleted(lesson) {
+    setLessons((list) => list.filter((l) => l.id !== lesson.id));
+    notify("lesson_deleted", { title: lesson.title });
+  }
+
   return (
     <div className="grid gap-5 bg-[var(--bg-secondary)] px-5 py-5 lg:grid-cols-3">
       {/* Lessons */}
@@ -294,7 +388,13 @@ function ModuleBody({ module, courseTitle }) {
         ) : (
           <ul className="flex flex-col gap-2">
             {lessons.map((l) => (
-              <LessonRow key={l.id} lesson={l} />
+              <LessonRow
+                key={l.id}
+                lesson={l}
+                onEdit={() => setEditingLesson(l)}
+                onPreview={() => setPreviewingLesson(l)}
+                onDelete={() => setDeletingLesson(l)}
+              />
             ))}
           </ul>
         )}
@@ -346,17 +446,41 @@ function ModuleBody({ module, courseTitle }) {
           </h4>
           {hasAssignment ? (
             <div className="flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-3">
-              <p className="inline-flex items-center gap-2 text-xs font-bold text-[var(--text-primary)]">
-                <ClipboardList className="h-3.5 w-3.5 text-[#F59E0B]" />
-                Assigned in {courseTitle}
+              <p className="inline-flex items-start gap-2 text-xs font-bold text-[var(--text-primary)]">
+                <ClipboardList className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
+                <span className="min-w-0 break-words">
+                  {assignment?.title ?? `Assigned in ${courseTitle}`}
+                </span>
               </p>
-              <button
-                type="button"
-                onClick={() => toast.info("Submissions visible on Assignments page")}
-                className="self-start rounded-lg border border-[var(--border-color)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
-              >
-                Review Submissions
-              </button>
+              {assignment?.deadline && (
+                <p className="text-[11px] text-[var(--text-secondary)] font-mono-ui">
+                  Due {assignment.deadline}
+                </p>
+              )}
+              <p className="text-[11px] text-[var(--text-muted)] font-mono-ui">
+                {assignmentSummary.total} submitted ·{" "}
+                {assignmentSummary.reviewed} reviewed
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!assignment}
+                  onClick={() => assignment && onEditAssignment?.(assignment)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:border-[#10B981] hover:text-[#10B981] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={!assignment}
+                  onClick={() => assignment && onReviewSubmissions?.(assignment)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#10B981] px-2.5 py-1 text-xs font-semibold text-[#10B981] transition-colors hover:bg-[#10B981]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Eye className="h-3 w-3" />
+                  Review Submissions
+                </button>
+              </div>
             </div>
           ) : (
             <button
@@ -381,19 +505,42 @@ function ModuleBody({ module, courseTitle }) {
         isOpen={addQuiz}
         moduleId={module.id}
         onClose={() => setAddQuiz(false)}
-        onCreated={() => setHasQuiz(true)}
+        onCreated={() => {
+          setHasQuiz(true);
+          notify("quiz_created", { module: module.title });
+        }}
       />
       <AddAssignmentModal
         isOpen={addAssignment}
         moduleId={module.id}
         onClose={() => setAddAssignment(false)}
-        onCreated={() => setHasAssignment(true)}
+        onCreated={(created) => {
+          setHasAssignment(true);
+          notify("assignment_created", {
+            title: created?.title ?? "New assignment",
+          });
+        }}
+      />
+
+      <EditLessonModal
+        lesson={editingLesson}
+        onClose={() => setEditingLesson(null)}
+        onSaved={handleLessonSaved}
+      />
+      <LessonPreviewModal
+        lesson={previewingLesson}
+        onClose={() => setPreviewingLesson(null)}
+      />
+      <DeleteLessonModal
+        lesson={deletingLesson}
+        onClose={() => setDeletingLesson(null)}
+        onDeleted={handleLessonDeleted}
       />
     </div>
   );
 }
 
-function LessonRow({ lesson }) {
+function LessonRow({ lesson, onEdit, onPreview, onDelete }) {
   const Icon = CONTENT_ICON[lesson.content_type] ?? FileText;
   return (
     <li className="flex items-center gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2">
@@ -405,14 +552,21 @@ function LessonRow({ lesson }) {
       </span>
       <button
         type="button"
-        onClick={() => toast.info("Edit lesson — coming soon")}
+        onClick={onEdit}
         className="rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
       >
         Edit
       </button>
       <button
         type="button"
-        onClick={() => toast.info("Delete lesson — coming soon")}
+        onClick={onPreview}
+        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+      >
+        Preview
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
         className="rounded-lg px-2.5 py-1 text-xs font-semibold text-red-500 transition-colors hover:bg-red-500/10"
       >
         Delete

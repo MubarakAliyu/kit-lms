@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import { addChild } from "@/_lib/api/parents";
 import { notifyAdmin } from "@/_lib/notifications/adminNotify";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const TRACKS = ["Scratch Programming", "Web Development", "Robotics Basics"];
 
@@ -23,6 +24,7 @@ const schema = z.object({
 
 export default function AddChildModal({ isOpen, onClose, onCreated }) {
   const { data: session } = useSession();
+  const { notify } = useLiveNotify();
   const {
     register,
     handleSubmit,
@@ -46,11 +48,15 @@ export default function AddChildModal({ isOpen, onClose, onCreated }) {
   async function onSubmit(values) {
     try {
       const created = await addChild(values);
-      toast.success("Child profile created! 👶");
+      toast.success("Child profile created");
       notifyAdmin("child_registered", {
         parent_name: session?.user?.name ?? "Parent",
         child_name: values.name,
         track: values.programme_track,
+      });
+      notify("child_registered", {
+        child: values.name,
+        parent: session?.user?.name ?? "Parent",
       });
       onCreated?.(created);
       onClose?.();

@@ -114,6 +114,7 @@ export default function InstructorStudentsPage() {
             <thead className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
               <tr>
                 <Th>Student</Th>
+                <Th>Admission No</Th>
                 <Th>Age</Th>
                 <Th>Track</Th>
                 <Th>Courses</Th>
@@ -159,6 +160,15 @@ function StudentRow({ student, onView }) {
             {student.name}
           </span>
         </div>
+      </td>
+      <td className="px-4 py-3">
+        {student.admission_no ? (
+          <span className="font-mono text-xs font-semibold text-[#10B981]">
+            {student.admission_no}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--text-muted)] font-mono-ui">—</span>
+        )}
       </td>
       <td className="px-4 py-3 text-[var(--text-primary)] font-mono-ui">
         {student.age}

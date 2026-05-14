@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useSidebarStore } from "@/_store/sidebarStore";
 import { useNotificationStore } from "@/_store/notificationStore";
+import { useLanguage } from "@/_lib/i18n/LanguageContext";
 import LogoutModal from "@/_components/ui/LogoutModal";
 
 const ICONS = {
@@ -38,40 +39,44 @@ const ICONS = {
   Bell,
 };
 
+// Nav items per role. `labelKey` resolves through the LanguageContext so the
+// sidebar switches languages instantly when the preference changes.
 const NAV_ITEMS = {
   student: [
-    { label: "Dashboard", icon: "LayoutDashboard", href: "/student" },
-    { label: "My Courses", icon: "BookOpen", href: "/student/courses" },
-    { label: "Assignments", icon: "ClipboardList", href: "/student/assignments" },
-    { label: "Certificates", icon: "Award", href: "/student/certificates" },
-    { label: "Notifications", icon: "Bell", href: "/student/notifications" },
-    { label: "Chat", icon: "MessageSquare", href: "/student/chat" },
-    { label: "Settings", icon: "Settings", href: "/student/settings" },
+    { labelKey: "nav.dashboard", icon: "LayoutDashboard", href: "/student" },
+    { labelKey: "nav.myCourses", icon: "BookOpen", href: "/student/courses" },
+    { labelKey: "nav.assignments", icon: "ClipboardList", href: "/student/assignments" },
+    { labelKey: "nav.certificates", icon: "Award", href: "/student/certificates" },
+    { labelKey: "nav.notifications", icon: "Bell", href: "/student/notifications" },
+    { labelKey: "nav.chat", icon: "MessageSquare", href: "/student/chat" },
+    { labelKey: "nav.settings", icon: "Settings", href: "/student/settings" },
   ],
   parent: [
-    { label: "Dashboard", icon: "LayoutDashboard", href: "/parent" },
-    { label: "My Children", icon: "Users", href: "/parent/children" },
-    { label: "Payments", icon: "CreditCard", href: "/parent/payments" },
-    { label: "Notifications", icon: "Bell", href: "/parent/notifications" },
-    { label: "Settings", icon: "Settings", href: "/parent/settings" },
+    { labelKey: "nav.dashboard", icon: "LayoutDashboard", href: "/parent" },
+    { labelKey: "nav.myChildren", icon: "Users", href: "/parent/children" },
+    { labelKey: "nav.payments", icon: "CreditCard", href: "/parent/payments" },
+    { labelKey: "nav.chat", icon: "MessageSquare", href: "/parent/chat" },
+    { labelKey: "nav.notifications", icon: "Bell", href: "/parent/notifications" },
+    { labelKey: "nav.settings", icon: "Settings", href: "/parent/settings" },
   ],
   instructor: [
-    { label: "Dashboard", icon: "LayoutDashboard", href: "/instructor" },
-    { label: "My Courses", icon: "BookOpen", href: "/instructor/courses" },
-    { label: "Students", icon: "Users", href: "/instructor/students" },
-    { label: "Assignments", icon: "ClipboardList", href: "/instructor/assignments" },
-    { label: "Chat", icon: "MessageSquare", href: "/instructor/chat" },
-    { label: "Notifications", icon: "Bell", href: "/instructor/notifications" },
-    { label: "Settings", icon: "Settings", href: "/instructor/settings" },
+    { labelKey: "nav.dashboard", icon: "LayoutDashboard", href: "/instructor" },
+    { labelKey: "nav.myCourses", icon: "BookOpen", href: "/instructor/courses" },
+    { labelKey: "nav.students", icon: "Users", href: "/instructor/students" },
+    { labelKey: "nav.assignments", icon: "ClipboardList", href: "/instructor/assignments" },
+    { labelKey: "nav.chat", icon: "MessageSquare", href: "/instructor/chat" },
+    { labelKey: "nav.notifications", icon: "Bell", href: "/instructor/notifications" },
+    { labelKey: "nav.settings", icon: "Settings", href: "/instructor/settings" },
   ],
   admin: [
-    { label: "Dashboard", icon: "LayoutDashboard", href: "/admin" },
-    { label: "Users", icon: "Users", href: "/admin/users" },
-    { label: "Courses", icon: "BookOpen", href: "/admin/courses" },
-    { label: "Analytics", icon: "BarChart2", href: "/admin/analytics" },
-    { label: "Payments", icon: "CreditCard", href: "/admin/payments" },
-    { label: "Notifications", icon: "Bell", href: "/admin/notifications" },
-    { label: "Settings", icon: "Settings", href: "/admin/settings" },
+    { labelKey: "nav.dashboard", icon: "LayoutDashboard", href: "/admin" },
+    { labelKey: "nav.users", icon: "Users", href: "/admin/users" },
+    { labelKey: "nav.courses", icon: "BookOpen", href: "/admin/courses" },
+    { labelKey: "nav.analytics", icon: "BarChart2", href: "/admin/analytics" },
+    { labelKey: "nav.payments", icon: "CreditCard", href: "/admin/payments" },
+    { labelKey: "nav.chat", icon: "MessageSquare", href: "/admin/chat" },
+    { labelKey: "nav.notifications", icon: "Bell", href: "/admin/notifications" },
+    { labelKey: "nav.settings", icon: "Settings", href: "/admin/settings" },
   ],
 };
 
@@ -172,6 +177,7 @@ export default function Sidebar() {
 function SidebarBody({ items, role, session, isCollapsed, onItemClick, onLogout }) {
   const pathname = usePathname();
   const { unreadCount } = useNotificationStore();
+  const { t } = useLanguage();
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -200,13 +206,14 @@ function SidebarBody({ items, role, session, isCollapsed, onItemClick, onLogout 
             const active = isItemActive(pathname, item.href, role);
             const showBadge =
               item.href.endsWith("/notifications") && unreadCount > 0;
+            const label = t(item.labelKey);
             return (
               <li key={item.href}>
                 <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.15 }}>
                   <Link
                     href={item.href}
                     onClick={onItemClick}
-                    title={isCollapsed ? item.label : undefined}
+                    title={isCollapsed ? label : undefined}
                     className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                       active
                         ? "bg-[#10B981]/10 text-[#10B981]"
@@ -227,7 +234,7 @@ function SidebarBody({ items, role, session, isCollapsed, onItemClick, onLogout 
                         strokeWidth={2.2}
                       />
                     )}
-                    {!isCollapsed && <span className="truncate flex-1">{item.label}</span>}
+                    {!isCollapsed && <span className="truncate flex-1">{label}</span>}
                     {showBadge && !isCollapsed && (
                       <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white font-mono-ui">
                         {unreadCount > 9 ? "9+" : unreadCount}
@@ -250,17 +257,34 @@ function SidebarBody({ items, role, session, isCollapsed, onItemClick, onLogout 
           className={`flex items-center gap-3 rounded-xl bg-[var(--bg-secondary)] p-2.5 ${
             isCollapsed ? "justify-center" : ""
           }`}
-          title={isCollapsed ? session?.user?.email : undefined}
+          title={
+            isCollapsed
+              ? session?.user?.admission_no ?? session?.user?.email
+              : undefined
+          }
         >
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#10B981] text-sm font-bold text-white">
             {getInitials(session)}
           </div>
           {!isCollapsed && (
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                {session?.user?.email ?? "—"}
-              </span>
-              {role && (
+              {role === "student" ? (
+                <>
+                  <span className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                    {session?.user?.name ?? "—"}
+                  </span>
+                  <span className="truncate text-xs font-mono font-semibold text-[#10B981]">
+                    {session?.user?.admission_no ??
+                      session?.user?.email ??
+                      "—"}
+                  </span>
+                </>
+              ) : (
+                <span className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                  {session?.user?.email ?? "—"}
+                </span>
+              )}
+              {role && role !== "student" && (
                 <span className="w-fit rounded bg-[var(--bg-card)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] font-mono-ui">
                   {role}
                 </span>
@@ -272,13 +296,13 @@ function SidebarBody({ items, role, session, isCollapsed, onItemClick, onLogout 
         <button
           type="button"
           onClick={onLogout}
-          title={isCollapsed ? "Logout" : undefined}
+          title={isCollapsed ? t("nav.logout") : undefined}
           className={`mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] transition-colors hover:bg-red-500/10 hover:text-red-500 ${
             isCollapsed ? "justify-center" : ""
           }`}
         >
           <LogOut className="h-4 w-4" strokeWidth={2.2} />
-          {!isCollapsed && <span>Logout</span>}
+          {!isCollapsed && <span>{t("nav.logout")}</span>}
         </button>
       </div>
     </div>

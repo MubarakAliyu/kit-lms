@@ -120,3 +120,27 @@ code, pre,
     rgba(31, 41, 55, 0.6) 100%
   );
 }
+
+/* Receipt print styling — hides every chrome element so window.print() emits
+   just the receipt card centered on the page. Applied to ReceiptModal's
+   inner container via className="print-receipt". */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-receipt,
+  .print-receipt * {
+    visibility: visible;
+  }
+  .print-receipt {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-shadow: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+

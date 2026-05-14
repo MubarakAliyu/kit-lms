@@ -37,7 +37,7 @@ export default function AssignInstructorModal({
         instructor_id: user?.id,
         course_id: courseId,
       });
-      toast.success("Instructor assigned! ✓");
+      toast.success("Instructor assigned");
       onClose?.();
     } catch {
       toast.error("Couldn't assign instructor");

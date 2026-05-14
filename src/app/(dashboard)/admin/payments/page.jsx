@@ -3,46 +3,69 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { differenceInDays, format } from "date-fns";
+import { differenceInCalendarDays, format } from "date-fns";
 import { toast } from "sonner";
 import {
-  CreditCard,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  CheckCircle,
+  Clock,
   Download,
-  Receipt as ReceiptIcon,
+  Search,
+  TrendingDown,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
-import { getAdminPayments } from "@/_lib/api/admin";
+import { getPayments, getPaymentStats } from "@/_lib/api/payments";
 import { useCountUp } from "@/_hooks/useCountUp";
+import { formatNaira } from "@/_lib/utils/formatters";
+import PaymentTable from "@/_components/payment/PaymentTable";
 import ReceiptModal from "@/_components/payment/ReceiptModal";
 
 const RANGES = [
+  { key: "all", label: "All Time" },
+  { key: "today", label: "Today" },
   { key: "week", label: "This Week" },
   { key: "month", label: "This Month" },
-  { key: "all", label: "All Time" },
 ];
 
-const STATUS_TONE = {
-  paid: { color: "#10B981", bg: "rgba(16,185,129,0.12)" },
-  pending: { color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
-  failed: { color: "#EF4444", bg: "rgba(239,68,68,0.12)" },
-};
-
-function formatNaira(n) {
-  return `₦${Number(n).toLocaleString("en-NG")}`;
-}
+const STATUSES = [
+  { key: "all", label: "All" },
+  { key: "paid", label: "Paid" },
+  { key: "pending", label: "Pending" },
+  { key: "failed", label: "Failed" },
+];
 
 export default function AdminPaymentsPage() {
   const [payments, setPayments] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [range, setRange] = useState("all");
-  const [openReceipt, setOpenReceipt] = useState(null);
+  const [status, setStatus] = useState("all");
+  const [query, setQuery] = useState("");
+  const [receiptPayment, setReceiptPayment] = useState(null);
   const pathname = usePathname();
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getAdminPayments()
-      .then((res) => setPayments(res?.payments ?? res ?? []))
+    Promise.all([getPayments(), getPaymentStats()])
+      .then(([rows, s]) => {
+        setPayments(rows ?? []);
+        setStats(s ?? null);
+      })
       .catch((err) => {
         console.warn("Payments fetch failed:", err.message);
         setError("Failed to load payments. Please refresh.");
@@ -51,14 +74,20 @@ export default function AdminPaymentsPage() {
   }, [pathname]);
 
   const filtered = useMemo(() => {
-    if (range === "all") return payments;
-    const now = new Date();
-    const limit = range === "week" ? 7 : 30;
+    const q = query.trim().toLowerCase();
     return payments.filter((p) => {
-      const days = differenceInDays(now, new Date(p.created_at));
-      return days >= 0 && days <= limit;
+      if (status !== "all" && p.status !== status) return false;
+      if (range !== "all") {
+        const days = differenceInCalendarDays(new Date(), new Date(p.created_at));
+        const limit = range === "today" ? 0 : range === "week" ? 7 : 30;
+        if (days < 0 || days > limit) return false;
+      }
+      if (!q) return true;
+      return [p.parent_name, p.student_name, p.course_title]
+        .filter(Boolean)
+        .some((field) => field.toLowerCase().includes(q));
     });
-  }, [payments, range]);
+  }, [payments, query, range, status]);
 
   const sortedHistory = useMemo(
     () =>
@@ -68,15 +97,12 @@ export default function AdminPaymentsPage() {
     [filtered]
   );
 
-  const totals = useMemo(() => {
-    const total = payments.reduce((s, p) => s + (p.amount ?? 0), 0);
-    const subscription = payments
-      .filter((p) => p.type === "subscription" && p.status === "paid")
-      .reduce((s, p) => s + p.amount, 0);
-    const oneTime = payments
-      .filter((p) => p.type === "one_time" && p.status === "paid")
-      .reduce((s, p) => s + p.amount, 0);
-    return { total, subscription, oneTime };
+  const counts = useMemo(() => {
+    return {
+      paid: payments.filter((p) => p.status === "paid").length,
+      pending: payments.filter((p) => p.status === "pending").length,
+      failed: payments.filter((p) => p.status === "failed").length,
+    };
   }, [payments]);
 
   function exportCSV() {
@@ -84,16 +110,7 @@ export default function AdminPaymentsPage() {
       toast.error("Nothing to export");
       return;
     }
-    const headers = [
-      "Date",
-      "Parent",
-      "Student",
-      "Course",
-      "Amount",
-      "Type",
-      "Status",
-      "Ref",
-    ];
+    const headers = ["Date", "Parent", "Student", "Course", "Amount", "Type", "Status", "Ref"];
     const rows = sortedHistory.map((p) => [
       format(new Date(p.created_at), "yyyy-MM-dd"),
       p.parent_name ?? "",
@@ -105,16 +122,18 @@ export default function AdminPaymentsPage() {
       p.paystack_ref,
     ]);
     const csv = [headers, ...rows]
-      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .map((r) =>
+        r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "kit-payments.csv";
+    a.download = `kit-payments-${format(new Date(), "yyyy-MM-dd")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("CSV exported!");
+    toast.success("CSV exported");
   }
 
   return (
@@ -124,7 +143,7 @@ export default function AdminPaymentsPage() {
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col gap-6"
     >
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">
             Payment Management
@@ -133,196 +152,416 @@ export default function AdminPaymentsPage() {
             Cross-platform payment history and revenue.
           </p>
         </div>
-        <button
+        <motion.button
           type="button"
           onClick={exportCSV}
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)] sm:self-auto"
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)] sm:self-auto"
         >
           <Download className="h-4 w-4" strokeWidth={2.2} />
           Export CSV
-        </button>
+        </motion.button>
       </header>
 
-      <RevenueSummary totals={totals} />
-
-      <div className="flex flex-wrap gap-2">
-        {RANGES.map((r) => {
-          const active = range === r.key;
-          return (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => setRange(r.key)}
-              className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors font-mono-ui ${
-                active
-                  ? "border-[#10B981] bg-[#10B981] text-white"
-                  : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
-              }`}
-            >
-              {r.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {error ? (
-        <ErrorState message={error} />
-      ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)]">
-          <table className="w-full min-w-[800px] text-sm">
-            <thead className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]">
-              <tr>
-                <Th>Date</Th>
-                <Th>Parent</Th>
-                <Th>Student</Th>
-                <Th>Course</Th>
-                <Th>Amount</Th>
-                <Th>Type</Th>
-                <Th>Status</Th>
-                <Th align="right">Receipt</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i} className="border-b border-[var(--border-color)]">
-                    <td colSpan={8} className="p-3">
-                      <div className="skeleton-shimmer h-8 rounded-lg" />
-                    </td>
-                  </tr>
-                ))
-              ) : sortedHistory.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center text-sm text-[var(--text-secondary)]">
-                    <CreditCard className="mx-auto mb-2 h-6 w-6 text-[var(--text-muted)]" />
-                    No payments in this range.
-                  </td>
-                </tr>
-              ) : (
-                sortedHistory.map((p) => (
-                  <PaymentRow
-                    key={p.id}
-                    payment={p}
-                    onView={() => setOpenReceipt(p)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
+      {error && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">
+          {error}
         </div>
       )}
 
-      <ReceiptModal payment={openReceipt} onClose={() => setOpenReceipt(null)} />
+      <RevenueStats stats={stats} loading={loading} />
+
+      <ChartsRow stats={stats} />
+
+      <QuickStatsRow counts={counts} />
+
+      <Filters
+        range={range}
+        setRange={setRange}
+        status={status}
+        setStatus={setStatus}
+        query={query}
+        setQuery={setQuery}
+      />
+
+      <PaymentTable
+        payments={sortedHistory}
+        showParent
+        loading={loading}
+        onViewReceipt={setReceiptPayment}
+      />
+
+      <ReceiptModal
+        payment={receiptPayment}
+        isOpen={!!receiptPayment}
+        onClose={() => setReceiptPayment(null)}
+      />
     </motion.div>
   );
 }
 
-function RevenueSummary({ totals }) {
-  const total = useCountUp(totals.total);
+// ── Revenue stats ─────────────────────────────────────────────────────────
+
+function RevenueStats({ stats, loading }) {
+  const total = useCountUp(stats?.total_revenue ?? 0);
+  const thisMonth = stats?.this_month ?? 0;
+  const lastMonth = stats?.last_month ?? 0;
+  const trendUp = thisMonth >= lastMonth;
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-          Total Revenue
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Stat
+        label="Total Revenue"
+        value={formatNaira(total)}
+        loading={loading}
+        accent
+        delay={0}
+      />
+      <Stat
+        label="This Month"
+        value={formatNaira(thisMonth)}
+        loading={loading}
+        trendIcon={trendUp ? TrendingUp : TrendingDown}
+        trendColor={trendUp ? "#10B981" : "#EF4444"}
+        delay={0.08}
+      />
+      <Stat
+        label="Subscriptions"
+        value={formatNaira(stats?.subscription_revenue ?? 0)}
+        loading={loading}
+        delay={0.16}
+      />
+      <Stat
+        label="One-time"
+        value={formatNaira(stats?.one_time_revenue ?? 0)}
+        loading={loading}
+        delay={0.24}
+      />
+    </section>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  loading,
+  accent = false,
+  trendIcon: TrendIcon,
+  trendColor,
+  delay = 0,
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay }}
+      whileHover={{ y: -2 }}
+      className="flex flex-col gap-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5 transition-shadow hover:shadow-md"
+    >
+      <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        {label}
+      </p>
+      {loading ? (
+        <div className="skeleton-shimmer h-8 w-32 rounded" />
+      ) : (
+        <p
+          className={`flex items-center gap-2 font-bold font-mono-ui ${
+            accent ? "text-3xl text-[#10B981]" : "text-2xl text-[var(--text-primary)]"
+          }`}
+        >
+          {value}
+          {TrendIcon && (
+            <TrendIcon className="h-4 w-4" style={{ color: trendColor }} />
+          )}
         </p>
-        <p className="mt-1 text-3xl font-bold text-[#10B981] font-mono-ui">
-          {formatNaira(total)}
+      )}
+    </motion.div>
+  );
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────
+
+function ChartsRow({ stats }) {
+  const monthlyData = stats?.monthly_data ?? [];
+  const breakdownData = useMemo(
+    () => [
+      { name: "Subscription", value: stats?.subscription_revenue ?? 0, fill: "#10B981" },
+      { name: "One-time", value: stats?.one_time_revenue ?? 0, fill: "#1E40AF" },
+    ],
+    [stats]
+  );
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <ChartCard title="Monthly Revenue">
+        <div style={{ width: "100%", height: 260 }}>
+          <ResponsiveContainer>
+            <BarChart
+              data={monthlyData}
+              margin={{ top: 8, right: 12, bottom: 4, left: 8 }}
+            >
+              <CartesianGrid
+                stroke="var(--border-color)"
+                strokeDasharray="3 3"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: "var(--text-secondary)", fontSize: 12 }}
+              />
+              <YAxis
+                tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: "var(--text-secondary)", fontSize: 12 }}
+                width={48}
+              />
+              <Tooltip
+                cursor={{ fill: "rgba(16,185,129,0.08)" }}
+                content={<MonthlyTooltip />}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar
+                dataKey="subscription"
+                stackId="a"
+                name="Subscription"
+                fill="#10B981"
+                animationDuration={1200}
+                animationBegin={0}
+              />
+              <Bar
+                dataKey="one_time"
+                stackId="a"
+                name="One-time"
+                fill="#1E40AF"
+                radius={[6, 6, 0, 0]}
+                animationDuration={1200}
+                animationBegin={200}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Revenue Split">
+        <div className="relative" style={{ width: "100%", height: 260 }}>
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie
+                data={breakdownData}
+                dataKey="value"
+                nameKey="name"
+                innerRadius={55}
+                outerRadius={85}
+                paddingAngle={2}
+                stroke="var(--bg-card)"
+                strokeWidth={2}
+                animationDuration={1200}
+                animationBegin={0}
+              >
+                {breakdownData.map((d) => (
+                  <Cell key={d.name} fill={d.fill} />
+                ))}
+              </Pie>
+              <Tooltip content={<CurrencyTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          <PieCenterTotal data={breakdownData} />
+        </div>
+        <PieLegend data={breakdownData} />
+      </ChartCard>
+    </section>
+  );
+}
+
+function ChartCard({ title, children }) {
+  return (
+    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5">
+      <h3 className="text-base font-bold text-[var(--text-primary)]">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
+function MonthlyTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        {label}
+      </p>
+      {payload.map((p) => (
+        <p
+          key={p.dataKey}
+          className="text-xs font-semibold font-mono-ui"
+          style={{ color: p.color }}
+        >
+          {p.name}: {formatNaira(p.value)}
         </p>
-      </div>
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-          Subscriptions
+      ))}
+      <p className="mt-1 text-sm font-bold text-[var(--text-primary)] font-mono-ui">
+        Total: {formatNaira(total)}
+      </p>
+    </div>
+  );
+}
+
+function CurrencyTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0];
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 shadow-lg">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+        {p.name}
+      </p>
+      <p className="text-sm font-bold text-[#10B981] font-mono-ui">
+        {formatNaira(p.value)}
+      </p>
+    </div>
+  );
+}
+
+function PieCenterTotal({ data }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  // Compact rendering: ₦95K
+  const compact =
+    total >= 1000
+      ? `₦${(total / 1000).toFixed(total >= 10000 ? 0 : 1)}K`
+      : formatNaira(total);
+  return (
+    <div className="pointer-events-none absolute inset-0 grid place-items-center">
+      <div className="text-center">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+          Total
         </p>
-        <p className="mt-1 text-2xl font-bold text-[var(--text-primary)] font-mono-ui">
-          {formatNaira(totals.subscription)}
-        </p>
-      </div>
-      <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-          One-time
-        </p>
-        <p className="mt-1 text-2xl font-bold text-[var(--text-primary)] font-mono-ui">
-          {formatNaira(totals.oneTime)}
+        <p className="mt-0.5 text-base font-bold text-[var(--text-primary)] font-mono-ui">
+          {compact}
         </p>
       </div>
     </div>
   );
 }
 
-function Th({ children, align = "left" }) {
+function PieLegend({ data }) {
   return (
-    <th
-      className={`px-4 py-3 text-${align} text-[10px] font-bold uppercase tracking-wider font-mono-ui`}
+    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+      {data.map((d) => (
+        <li key={d.name} className="inline-flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: d.fill }}
+          />
+          <span className="text-xs font-semibold text-[var(--text-secondary)] font-mono-ui">
+            {d.name} · {formatNaira(d.value)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── Quick stats + Filters ─────────────────────────────────────────────────
+
+function QuickStatsRow({ counts }) {
+  return (
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <MiniStat
+        icon={CheckCircle}
+        color="#10B981"
+        label="Successful"
+        value={counts.paid}
+      />
+      <MiniStat icon={Clock} color="#F59E0B" label="Pending" value={counts.pending} />
+      <MiniStat icon={XCircle} color="#EF4444" label="Failed" value={counts.failed} />
+    </section>
+  );
+}
+
+function MiniStat({ icon: Icon, color, label, value }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex items-center gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4"
+    >
+      <span
+        className="grid h-9 w-9 place-items-center rounded-lg"
+        style={{ backgroundColor: `${color}1F`, color }}
+      >
+        <Icon className="h-4 w-4" strokeWidth={2.2} />
+      </span>
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
+          {label}
+        </p>
+        <p className="text-xl font-bold text-[var(--text-primary)] font-mono-ui">
+          {value}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function Filters({ range, setRange, status, setStatus, query, setQuery }) {
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <div className="relative w-full sm:max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search parent, student, or course…"
+          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors focus:border-[#10B981] focus:outline-none focus:ring-2 focus:ring-[#10B981]/20"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap gap-1.5">
+          {RANGES.map((r) => (
+            <Pill
+              key={r.key}
+              active={range === r.key}
+              onClick={() => setRange(r.key)}
+            >
+              {r.label}
+            </Pill>
+          ))}
+        </div>
+        <div className="h-5 w-px bg-[var(--border-color)]" />
+        <div className="flex flex-wrap gap-1.5">
+          {STATUSES.map((s) => (
+            <Pill
+              key={s.key}
+              active={status === s.key}
+              onClick={() => setStatus(s.key)}
+            >
+              {s.label}
+            </Pill>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Pill({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors font-mono-ui ${
+        active
+          ? "border-[#10B981] bg-[#10B981] text-white"
+          : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+      }`}
     >
       {children}
-    </th>
-  );
-}
-
-function PaymentRow({ payment, onView }) {
-  const status = STATUS_TONE[payment.status] ?? STATUS_TONE.pending;
-  return (
-    <tr className="border-b border-[var(--border-color)] last:border-b-0 transition-colors hover:bg-[var(--bg-secondary)]/50">
-      <td className="px-4 py-3 text-[var(--text-primary)] font-mono-ui">
-        {format(new Date(payment.created_at), "MMM d, yyyy")}
-      </td>
-      <td className="px-4 py-3 text-[var(--text-primary)]">
-        {payment.parent_name ?? "—"}
-      </td>
-      <td className="px-4 py-3 text-[var(--text-primary)]">
-        {payment.student_name ?? "—"}
-      </td>
-      <td className="px-4 py-3 text-[var(--text-primary)]">
-        {payment.course_title}
-      </td>
-      <td className="px-4 py-3 font-bold text-[#10B981] font-mono-ui">
-        {formatNaira(payment.amount)}
-      </td>
-      <td className="px-4 py-3">
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-          style={
-            payment.type === "subscription"
-              ? { color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)" }
-              : { color: "#3B82F6", backgroundColor: "rgba(59,130,246,0.12)" }
-          }
-        >
-          {payment.type.replace("_", " ")}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono-ui"
-          style={{ color: status.color, backgroundColor: status.bg }}
-        >
-          {payment.status}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <button
-          type="button"
-          onClick={onView}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
-        >
-          <ReceiptIcon className="h-3.5 w-3.5" />
-          View
-        </button>
-      </td>
-    </tr>
-  );
-}
-
-function ErrorState({ message }) {
-  return (
-    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] py-12 text-center">
-      <p className="text-sm text-red-400">{message}</p>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="mt-3 text-sm font-semibold text-[#10B981] underline transition-colors hover:text-[#059669] font-mono-ui"
-      >
-        Refresh page
-      </button>
-    </div>
+    </button>
   );
 }

@@ -1,27 +1,49 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { AlertCircle, Hash, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { createUser } from "@/_lib/api/admin";
+import { createUser, getNextAdmissionNo } from "@/_lib/api/admin";
 
 const ROLES = ["admin", "instructor", "student", "parent"];
 const TRACKS = ["Scratch Programming", "Web Development", "Robotics Basics"];
 
+// Students no longer require an email. Email becomes a free-form contact
+// field; the admission number is the login identifier.
 const schema = z
   .object({
     name: z.string().trim().min(2, "Name must be at least 2 characters"),
-    email: z.string().trim().email("Enter a valid email"),
+    email: z.string().trim().optional().or(z.literal("")),
     role: z.enum(ROLES, { message: "Pick a role" }),
     age: z.coerce.number().optional().or(z.literal(NaN)),
     programme_track: z.string().optional(),
     bio: z.string().max(200).optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.role !== "student") {
+      const ok = z.string().email().safeParse(data.email).success;
+      if (!ok) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Enter a valid email",
+        });
+      }
+    } else if (data.email && data.email.length > 0) {
+      // Optional, but if provided must still be a real email.
+      const ok = z.string().email().safeParse(data.email).success;
+      if (!ok) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Enter a valid email (or leave blank)",
+        });
+      }
+    }
     if (data.role === "student") {
       if (!data.age || Number.isNaN(data.age) || data.age < 5 || data.age > 18) {
         ctx.addIssue({
@@ -65,6 +87,8 @@ export default function CreateUserModal({
   });
 
   const role = watch("role");
+  const [nextAdmissionNo, setNextAdmissionNo] = useState(null);
+  const [admissionLoading, setAdmissionLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,13 +107,40 @@ export default function CreateUserModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose, reset, defaultValues]);
 
+  // Fetch the next admission number whenever the modal opens for a student
+  // (or the role flips to student mid-flow). Other roles never need it.
+  useEffect(() => {
+    if (!isOpen || role !== "student") return;
+    let cancelled = false;
+    setAdmissionLoading(true);
+    getNextAdmissionNo()
+      .then((res) => {
+        if (!cancelled) setNextAdmissionNo(res?.next ?? null);
+      })
+      .catch((err) =>
+        console.warn("Next admission no fetch failed:", err?.message)
+      )
+      .finally(() => {
+        if (!cancelled) setAdmissionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, role]);
+
   async function onSubmit(values) {
     try {
-      const created = await createUser({
+      // Strip the empty-email sentinel for students so the API sees null.
+      const payload = {
         ...values,
+        email: values.email?.length ? values.email : null,
         pending_id: defaultValues?.pending_id,
-      });
-      toast.success("User created! ✓");
+      };
+      const created = await createUser(payload);
+      const idLine = created.admission_no
+        ? `Admission No: ${created.admission_no}`
+        : created.email;
+      toast.success(`User created! ${idLine}`);
       onCreated?.(created);
       onClose?.();
     } catch {
@@ -172,16 +223,6 @@ export default function CreateUserModal({
                 />
               </Field>
 
-              <Field id="cu-email" label="Email" error={errors.email?.message}>
-                <input
-                  id="cu-email"
-                  type="email"
-                  placeholder="user@kidsintech.school"
-                  {...register("email")}
-                  className={inputClass(errors.email)}
-                />
-              </Field>
-
               <Field id="cu-role" label="Role" error={errors.role?.message}>
                 <select
                   id="cu-role"
@@ -196,8 +237,44 @@ export default function CreateUserModal({
                 </select>
               </Field>
 
-              {role === "student" && (
+              {role === "student" ? (
                 <>
+                  <div className="rounded-2xl border border-[#10B981]/30 bg-[#10B981]/10 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-[#10B981]">
+                          Admission Number (Auto-generated)
+                        </p>
+                        <p className="mt-1 font-mono text-2xl font-bold text-[#10B981]">
+                          {admissionLoading
+                            ? "Loading…"
+                            : nextAdmissionNo ?? "—"}
+                        </p>
+                      </div>
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[#10B981]/20">
+                        <Hash className="h-6 w-6 text-[#10B981]" />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-[var(--text-muted)]">
+                      This admission number is automatically assigned and
+                      cannot be changed. The student will use this to log in.
+                    </p>
+                  </div>
+
+                  <Field
+                    id="cu-email"
+                    label="Contact Email (Optional)"
+                    error={errors.email?.message}
+                  >
+                    <input
+                      id="cu-email"
+                      type="email"
+                      placeholder="student@email.com"
+                      {...register("email")}
+                      className={inputClass(errors.email)}
+                    />
+                  </Field>
+
                   <Field id="cu-age" label="Age" error={errors.age?.message}>
                     <input
                       id="cu-age"
@@ -231,6 +308,16 @@ export default function CreateUserModal({
                     </select>
                   </Field>
                 </>
+              ) : (
+                <Field id="cu-email" label="Email" error={errors.email?.message}>
+                  <input
+                    id="cu-email"
+                    type="email"
+                    placeholder="user@kidsintech.school"
+                    {...register("email")}
+                    className={inputClass(errors.email)}
+                  />
+                </Field>
               )}
 
               {role === "instructor" && (

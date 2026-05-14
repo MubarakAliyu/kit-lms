@@ -31,3 +31,6 @@ export const createQuiz = (data) =>
 
 export const createAssignment = (data) =>
   apiClient.post("/assignments", data).then((r) => r.data);
+
+export const updateAssignment = (id, data) =>
+  apiClient.put(`/assignments/${id}`, data).then((r) => r.data);

@@ -76,7 +76,7 @@ export default function EditCourseModal({
         instructor_name: instructor?.name ?? course.instructor_name,
         thumbnail_url: thumbnailPreview,
       });
-      toast.success("Course updated! ✓");
+      toast.success("Course updated");
       onUpdated?.({
         ...course,
         ...values,

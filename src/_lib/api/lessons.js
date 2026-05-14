@@ -20,3 +20,15 @@ export async function markLessonComplete(lessonId) {
   const { data } = await apiClient.post(`/lessons/${lessonId}/complete`);
   return data;
 }
+
+/** Updates a lesson with a partial body. Returns the persisted record. */
+export async function updateLesson(lessonId, payload) {
+  const { data } = await apiClient.put(`/lessons/${lessonId}`, payload);
+  return data;
+}
+
+/** Deletes a lesson. Returns { success: true }. */
+export async function deleteLesson(lessonId) {
+  const { data } = await apiClient.delete(`/lessons/${lessonId}`);
+  return data;
+}

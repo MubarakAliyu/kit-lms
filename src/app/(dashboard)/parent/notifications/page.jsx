@@ -10,6 +10,7 @@ import {
   BellOff,
   ClipboardCheck,
   CreditCard,
+  MessageSquare,
   TrendingUp,
   Trophy,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const TYPE_META = {
   payment_success: { icon: CreditCard, color: "#3B82F6" },
   payment_failed: { icon: AlertCircle, color: "#EF4444" },
   assignment_feedback: { icon: ClipboardCheck, color: "#F59E0B" },
+  new_message: { icon: MessageSquare, color: "#3B82F6" },
 };
 
 const TABS = [
@@ -31,6 +33,7 @@ const TABS = [
   { key: "unread", label: "Unread" },
   { key: "progress", label: "Progress" },
   { key: "payments", label: "Payments" },
+  { key: "messages", label: "Messages" },
 ];
 
 const TAB_FILTERS = {
@@ -42,6 +45,7 @@ const TAB_FILTERS = {
     n.type === "assignment_feedback",
   payments: (n) =>
     n.type === "payment_success" || n.type === "payment_failed",
+  messages: (n) => n.type === "new_message",
 };
 
 export default function ParentNotificationsPage() {

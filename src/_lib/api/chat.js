@@ -1,9 +1,9 @@
 import { apiClient } from "./client";
 
 /**
- * Returns conversations sorted by recency. Pass a `userId` to fetch a
- * specific user's feed (e.g. the instructor's). Omitting it falls back to
- * the current user's feed on the backend.
+ * Returns conversations for a viewer. Pass `userId` (e.g. "s1", "i1",
+ * "p1", "admin1") so the backend projects the right participant for each
+ * side of the conversation.
  */
 export async function getConversations(userId) {
   const url = userId ? `/conversations?user_id=${userId}` : "/conversations";
@@ -11,7 +11,6 @@ export async function getConversations(userId) {
   return data;
 }
 
-/** Returns the messages for a conversation, oldest → newest. */
 export async function getMessages(conversationId) {
   const { data } = await apiClient.get(
     `/messages?conversation_id=${conversationId}`
@@ -19,14 +18,20 @@ export async function getMessages(conversationId) {
   return data;
 }
 
-/**
- * Sends a message. Returns the persisted message with `id` and
- * `created_at` populated.
- *
- * @param {{ sender_id: string, receiver_id: string, message: string,
- *   file_url?: string|null }} payload
- */
 export async function sendMessage(payload) {
   const { data } = await apiClient.post("/messages", payload);
+  return data;
+}
+
+export async function markMessagesRead(conversationId) {
+  const { data } = await apiClient.put("/messages/read", {
+    conversation_id: conversationId,
+  });
+  return data;
+}
+
+/** Admin monitor — every conversation across every role. */
+export async function getAllConversations() {
+  const { data } = await apiClient.get("/admin/chat/all-conversations");
   return data;
 }

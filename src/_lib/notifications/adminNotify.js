@@ -16,7 +16,7 @@ const TEMPLATES = {
     priority: false,
   },
   payment_made: {
-    title: "Payment Received 💰",
+    title: "Payment Received",
     message: ({ amount, parent_name, course_title }) =>
       `₦${Number(amount).toLocaleString()} received from ${parent_name} for ${course_title}`,
     priority: true,
@@ -34,7 +34,7 @@ const TEMPLATES = {
     priority: true,
   },
   course_completed: {
-    title: "Course Completed 🎓",
+    title: "Course Completed",
     message: ({ student_name, course_title }) =>
       `${student_name} completed ${course_title}`,
     priority: true,

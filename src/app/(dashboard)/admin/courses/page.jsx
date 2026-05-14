@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import {
   BookOpen,
+  Check,
   Pencil,
   Plus,
   Trash2,
@@ -23,6 +24,7 @@ import EditCourseModal from "@/_components/admin/EditCourseModal";
 import DeleteCourseConfirmModal from "@/_components/admin/DeleteCourseConfirmModal";
 import CourseThumbnail from "@/_components/ui/CourseThumbnail";
 import Link from "next/link";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const COURSE_GRADIENT = {
   c1: "from-[#10B981] to-[#059669]",
@@ -47,6 +49,7 @@ export default function AdminCoursesPage() {
   const [openCreate, setOpenCreate] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const { notify } = useLiveNotify();
 
   const pathname = usePathname();
 
@@ -87,10 +90,10 @@ export default function AdminCoursesPage() {
     try {
       if (next) {
         await publishCourse(course.id);
-        toast.success("Course published! 🎉");
+        notify("course_published", { title: course.title });
       } else {
         await unpublishCourse(course.id);
-        toast.success("Course unpublished");
+        notify("course_unpublished", { title: course.title });
       }
     } catch {
       // Roll back optimistic flip on failure
@@ -310,9 +313,10 @@ function CourseCard({ course, index, onTogglePublish, onEdit, onDelete }) {
           <button
             type="button"
             onClick={onTogglePublish}
-            className="w-full rounded-xl bg-[#10B981] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#10B981] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
           >
-            Publish ✓
+            Publish
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />
           </button>
         )}
         <Link

@@ -1,51 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useAnimation } from "motion/react";
 import { Bell, LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
 import { useSidebarStore } from "@/_store/sidebarStore";
 import { useNotificationStore } from "@/_store/notificationStore";
 import { useAuthStore } from "@/_store/authStore";
+import { useLanguage } from "@/_lib/i18n/LanguageContext";
 import NotificationDropdown from "@/_components/notifications/NotificationDropdown";
 import { ThemeToggle } from "@/_components/ui/ThemeToggle";
 
-const ROUTE_TITLES = {
-  "/student": "Dashboard",
-  "/student/courses": "My Courses",
-  "/student/lessons": "Lessons",
-  "/student/assignments": "Assignments",
-  "/student/chat": "Chat",
-  "/student/settings": "Settings",
-  "/parent": "Dashboard",
-  "/parent/children": "My Children",
-  "/parent/payments": "Payments",
-  "/parent/settings": "Settings",
-  "/instructor": "Dashboard",
-  "/instructor/courses": "My Courses",
-  "/instructor/students": "Students",
-  "/instructor/assignments": "Assignments",
-  "/instructor/chat": "Chat",
-  "/instructor/settings": "Settings",
-  "/admin": "Dashboard",
-  "/admin/users": "Users",
-  "/admin/courses": "Courses",
-  "/admin/analytics": "Analytics",
-  "/admin/payments": "Payments",
-  "/admin/settings": "Settings",
+// Map each top-level dashboard route to the locale key that names it. The
+// title is resolved via t() at render time so language changes are immediate.
+const ROUTE_TITLE_KEYS = {
+  "/student": "nav.dashboard",
+  "/student/courses": "nav.myCourses",
+  "/student/lessons": "nav.lessons",
+  "/student/assignments": "nav.assignments",
+  "/student/certificates": "nav.certificates",
+  "/student/chat": "nav.chat",
+  "/student/notifications": "nav.notifications",
+  "/student/settings": "nav.settings",
+  "/parent": "nav.dashboard",
+  "/parent/children": "nav.myChildren",
+  "/parent/payments": "nav.payments",
+  "/parent/chat": "nav.chat",
+  "/parent/notifications": "nav.notifications",
+  "/parent/settings": "nav.settings",
+  "/instructor": "nav.dashboard",
+  "/instructor/courses": "nav.myCourses",
+  "/instructor/students": "nav.students",
+  "/instructor/assignments": "nav.assignments",
+  "/instructor/chat": "nav.chat",
+  "/instructor/notifications": "nav.notifications",
+  "/instructor/settings": "nav.settings",
+  "/admin": "nav.dashboard",
+  "/admin/users": "users.userManagement",
+  "/admin/courses": "nav.courses",
+  "/admin/analytics": "analytics.analytics",
+  "/admin/payments": "payments.payments",
+  "/admin/chat": "chat.monitorTitle",
+  "/admin/notifications": "nav.notifications",
+  "/admin/settings": "nav.settings",
 };
 
-function getRouteTitle(pathname) {
-  if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
+function routeTitleKey(pathname) {
+  if (ROUTE_TITLE_KEYS[pathname]) return ROUTE_TITLE_KEYS[pathname];
   const segments = pathname.split("/").filter(Boolean);
   while (segments.length > 1) {
     segments.pop();
     const key = `/${segments.join("/")}`;
-    if (ROUTE_TITLES[key]) return ROUTE_TITLES[key];
+    if (ROUTE_TITLE_KEYS[key]) return ROUTE_TITLE_KEYS[key];
   }
-  return "";
+  return "nav.dashboard";
 }
 
 function getInitials(session) {
@@ -61,13 +71,28 @@ export default function Topbar() {
   const { toggleOpen } = useSidebarStore();
   const { unreadCount } = useNotificationStore();
   const { languagePreference } = useAuthStore();
+  const { t } = useLanguage();
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
 
+  // Shake the bell whenever the unread counter increases — that's the
+  // visible signal that a liveNotify event just landed in the store.
+  const bellControls = useAnimation();
+  const prevUnread = useRef(unreadCount);
+  useEffect(() => {
+    if (unreadCount > prevUnread.current) {
+      bellControls.start({
+        rotate: [0, 15, -15, 10, -10, 5, -5, 0],
+        transition: { duration: 0.5 },
+      });
+    }
+    prevUnread.current = unreadCount;
+  }, [unreadCount, bellControls]);
+
   const role = session?.user?.role;
   const settingsHref = role ? `/${role}/settings` : "/login";
-  const title = getRouteTitle(pathname);
+  const title = t(routeTitleKey(pathname));
 
   const closeAll = () => {
     setNotifOpen(false);
@@ -102,7 +127,8 @@ export default function Topbar() {
         <button
           type="button"
           onClick={() => router.push(settingsHref)}
-          aria-label="Change language in settings"
+          aria-label="Language preference"
+          title={t("settings.languagePreference")}
           className="rounded-full bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] font-mono-ui"
         >
           {(languagePreference || "en").toUpperCase()}
@@ -122,7 +148,9 @@ export default function Topbar() {
             aria-expanded={notifOpen}
             className="relative grid h-9 w-9 place-items-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
           >
-            <Bell className="h-5 w-5" />
+            <motion.span animate={bellControls} style={{ display: "inline-flex" }}>
+              <Bell className="h-5 w-5" />
+            </motion.span>
             {unreadCount > 0 && (
               <motion.span
                 animate={{ scale: [1, 1.18, 1] }}
@@ -166,12 +194,23 @@ export default function Topbar() {
               >
                 <div className="border-b border-[var(--border-color)] px-4 py-3">
                   <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                    {session?.user?.email ?? "—"}
+                    {session?.user?.name ?? session?.user?.email ?? "—"}
                   </p>
-                  {role && (
-                    <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] font-mono-ui">
-                      {role}
+                  {role === "student" && session?.user?.admission_no ? (
+                    <p className="mt-0.5 truncate text-xs font-mono font-semibold text-[#10B981]">
+                      {session.user.admission_no}
                     </p>
+                  ) : (
+                    session?.user?.email && (
+                      <p className="mt-0.5 truncate text-xs text-[var(--text-muted)] font-mono-ui">
+                        {session.user.email}
+                      </p>
+                    )
+                  )}
+                  {role && (
+                    <span className="mt-1 inline-flex w-fit rounded bg-[var(--bg-secondary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] font-mono-ui">
+                      {role}
+                    </span>
                   )}
                 </div>
                 <div className="flex flex-col py-1">
@@ -181,7 +220,7 @@ export default function Topbar() {
                     className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
                     role="menuitem"
                   >
-                    <User className="h-4 w-4" /> Profile
+                    <User className="h-4 w-4" /> {t("settings.profile")}
                   </Link>
                   <Link
                     href={settingsHref}
@@ -189,7 +228,7 @@ export default function Topbar() {
                     className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-secondary)]"
                     role="menuitem"
                   >
-                    <SettingsIcon className="h-4 w-4" /> Settings
+                    <SettingsIcon className="h-4 w-4" /> {t("nav.settings")}
                   </Link>
                   <button
                     type="button"
@@ -197,7 +236,7 @@ export default function Topbar() {
                     className="flex items-center gap-2 px-4 py-2 text-left text-sm text-red-500 transition-colors hover:bg-red-500/10"
                     role="menuitem"
                   >
-                    <LogOut className="h-4 w-4" /> Logout
+                    <LogOut className="h-4 w-4" /> {t("nav.logout")}
                   </button>
                 </div>
               </motion.div>

@@ -32,7 +32,7 @@ import {
   getAdminUsers,
   savePermissions,
 } from "@/_lib/api/admin";
-import { useAuthStore } from "@/_store/authStore";
+import LanguageTab from "@/_components/settings/LanguageTab";
 import CreateUserModal from "@/_components/admin/CreateUserModal";
 
 const TABS = [
@@ -101,7 +101,12 @@ export default function AdminSettingsPage() {
               {tab === "security" && <SecurityTab />}
               {tab === "platform" && <PlatformTab />}
               {tab === "roles" && <RolesTab />}
-              {tab === "language" && <LanguageTab />}
+              {tab === "language" && (
+                <div className="flex flex-col gap-6">
+                  <LanguageTab />
+                  <AdminThemePicker />
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </section>
@@ -153,7 +158,7 @@ function ProfileTab() {
     setSubmitting(true);
     try {
       await updateProfile({ name });
-      toast.success("Profile updated! ✓");
+      toast.success("Profile updated");
     } catch {
       toast.error("Couldn't update profile");
     } finally {
@@ -257,7 +262,7 @@ function SecurityTab() {
         current_password: vals.current,
         new_password: vals.next,
       });
-      toast.success("Password updated! 🔒");
+      toast.success("Password updated");
       setVals({ current: "", next: "", confirm: "" });
     } catch {
       toast.error("Couldn't update password");
@@ -515,95 +520,29 @@ function PlatformTab() {
 }
 
 // ── Language ───────────────────────────────────────────────────────────────
+// LanguageTab is shared from @/_components/settings/LanguageTab. AdminThemePicker
+// renders alongside it since admin settings has theme co-located here.
 
-function LanguageTab() {
-  const { languagePreference, setLanguagePreference } = useAuthStore();
-  const [selected, setSelected] = useState(languagePreference || "en");
+function AdminThemePicker() {
   const { theme, setTheme } = useTheme();
-
-  function handleSave() {
-    setLanguagePreference(selected);
-    toast.success("Language preference saved");
-  }
-
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Language</h2>
-        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-          Choose the language you&apos;d like the LMS interface in.
-        </p>
-      </header>
-
-      <div className="flex flex-col gap-3">
-        <LanguageRadio
-          flag="🇬🇧"
-          label="English"
-          checked={selected === "en"}
-          onSelect={() => setSelected("en")}
+    <div className="border-t border-[var(--border-color)] pt-5">
+      <h3 className="text-sm font-bold text-[var(--text-primary)]">Theme</h3>
+      <div className="mt-3 flex gap-2">
+        <ThemeChip
+          icon={Sun}
+          label="Light"
+          active={theme === "light"}
+          onClick={() => setTheme("light")}
         />
-        <LanguageRadio
-          flag="🇳🇬"
-          label="Hausa"
-          checked={selected === "ha"}
-          onSelect={() => setSelected("ha")}
+        <ThemeChip
+          icon={Moon}
+          label="Dark"
+          active={theme === "dark"}
+          onClick={() => setTheme("dark")}
         />
-      </div>
-
-      <button
-        type="button"
-        onClick={handleSave}
-        className="self-start rounded-xl bg-[#10B981] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
-      >
-        Save Preference
-      </button>
-
-      <div className="border-t border-[var(--border-color)] pt-5">
-        <h3 className="text-sm font-bold text-[var(--text-primary)]">Theme</h3>
-        <div className="mt-3 flex gap-2">
-          <ThemeChip
-            icon={Sun}
-            label="Light"
-            active={theme === "light"}
-            onClick={() => setTheme("light")}
-          />
-          <ThemeChip
-            icon={Moon}
-            label="Dark"
-            active={theme === "dark"}
-            onClick={() => setTheme("dark")}
-          />
-        </div>
       </div>
     </div>
-  );
-}
-
-function LanguageRadio({ flag, label, checked, onSelect }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onSelect}
-      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-        checked
-          ? "border-[#10B981] bg-[#10B981]/10"
-          : "border-[var(--border-color)] hover:bg-[var(--bg-secondary)]"
-      }`}
-    >
-      <span className="text-2xl">{flag}</span>
-      <span className="flex-1 font-semibold text-[var(--text-primary)]">{label}</span>
-      <span
-        className={`grid h-5 w-5 place-items-center rounded-full border-2 ${
-          checked
-            ? "border-[#10B981] bg-[#10B981]"
-            : "border-[var(--border-color)]"
-        }`}
-      >
-        {checked && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
-      </span>
-    </button>
   );
 }
 
@@ -661,7 +600,7 @@ function RolesTab() {
     setSaving(true);
     try {
       await savePermissions({ permissions });
-      toast.success("Permissions updated! ✓");
+      toast.success("Permissions updated");
     } catch {
       toast.error("Couldn't save permissions");
     } finally {

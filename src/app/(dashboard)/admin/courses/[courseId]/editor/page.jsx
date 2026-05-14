@@ -9,9 +9,12 @@ import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  Eye,
+  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -28,7 +31,12 @@ import AddModuleModal from "@/_components/instructor/AddModuleModal";
 import AddLessonModal from "@/_components/instructor/AddLessonModal";
 import AddQuizModal from "@/_components/instructor/AddQuizModal";
 import AddAssignmentModal from "@/_components/instructor/AddAssignmentModal";
+import EditAssignmentModal from "@/_components/instructor/EditAssignmentModal";
 import AssignmentReviewModal from "@/_components/instructor/AssignmentReviewModal";
+import EditLessonModal from "@/_components/editor/EditLessonModal";
+import LessonPreviewModal from "@/_components/editor/LessonPreviewModal";
+import DeleteLessonModal from "@/_components/editor/DeleteLessonModal";
+import { useLiveNotify } from "@/_lib/notifications/liveNotify";
 
 const SUBMISSION_TONE = {
   submitted: { color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
@@ -51,7 +59,13 @@ export default function AdminCourseEditorPage() {
   const [openAddLesson, setOpenAddLesson] = useState(null);
   const [openAddQuiz, setOpenAddQuiz] = useState(null);
   const [openAddAssignment, setOpenAddAssignment] = useState(null);
+  const [editingAssignment, setEditingAssignment] = useState(null);
   const [reviewing, setReviewing] = useState(null);
+
+  const [editingLesson, setEditingLesson] = useState(null);
+  const [previewingLesson, setPreviewingLesson] = useState(null);
+  const [deletingLesson, setDeletingLesson] = useState(null);
+  const { notify } = useLiveNotify();
 
   // Inline editing state for course title/description.
   const [titleDraft, setTitleDraft] = useState("");
@@ -109,7 +123,7 @@ export default function AdminCourseEditorPage() {
             }
           : c
       );
-      toast.success("Course header saved! ✓");
+      toast.success("Course header saved");
     } catch {
       toast.error("Couldn't save");
     } finally {
@@ -124,7 +138,7 @@ export default function AdminCourseEditorPage() {
     try {
       if (next) {
         await publishCourse(course.id);
-        toast.success("Course published! 🎉");
+        toast.success("Course published");
       } else {
         await unpublishCourse(course.id);
         toast.success("Course unpublished");
@@ -156,6 +170,37 @@ export default function AdminCourseEditorPage() {
       ...map,
       [moduleId]: [...(map[moduleId] ?? []), lesson],
     }));
+  }
+
+  function handleLessonSaved(updated) {
+    setLessonsByModule((map) => {
+      const next = {};
+      for (const [moduleId, list] of Object.entries(map)) {
+        next[moduleId] = list.map((l) =>
+          l.id === updated.id ? { ...l, ...updated } : l
+        );
+      }
+      return next;
+    });
+    notify("lesson_saved", { title: updated.title });
+  }
+
+  function handleLessonDeleted(lesson) {
+    setLessonsByModule((map) => {
+      const next = {};
+      for (const [moduleId, list] of Object.entries(map)) {
+        next[moduleId] = list.filter((l) => l.id !== lesson.id);
+      }
+      return next;
+    });
+    notify("lesson_deleted", { title: lesson.title });
+  }
+
+  function handleAssignmentUpdated(updated) {
+    setAssignments((list) =>
+      list.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+    );
+    notify("assignment_updated", { title: updated.title });
   }
 
   function handleReviewed({ assignmentId, submissionId, grade, feedback }) {
@@ -258,9 +303,13 @@ export default function AdminCourseEditorPage() {
                 onAddLesson={() => setOpenAddLesson(m.id)}
                 onAddQuiz={() => setOpenAddQuiz(m.id)}
                 onAddAssignment={() => setOpenAddAssignment(m.id)}
+                onEditAssignment={setEditingAssignment}
                 onReview={(assignment, submission) =>
                   setReviewing({ assignment, submission })
                 }
+                onEditLesson={setEditingLesson}
+                onPreviewLesson={setPreviewingLesson}
+                onDeleteLesson={setDeletingLesson}
               />
             ))}
           </ul>
@@ -289,26 +338,46 @@ export default function AdminCourseEditorPage() {
         moduleId={openAddQuiz}
         onClose={() => setOpenAddQuiz(null)}
         onCreated={() => {
+          const moduleTitle =
+            modules.find((m) => m.id === openAddQuiz)?.title ?? "module";
           setModules((prev) =>
             prev.map((m) =>
               m.id === openAddQuiz ? { ...m, quiz_id: `q-${Date.now()}` } : m
             )
           );
+          notify("quiz_created", { module: moduleTitle });
         }}
       />
       <AddAssignmentModal
         isOpen={!!openAddAssignment}
         moduleId={openAddAssignment}
+        courseId={course.id}
+        courseTitle={course.title}
         onClose={() => setOpenAddAssignment(null)}
-        onCreated={() => {
+        onCreated={(created) => {
           setModules((prev) =>
             prev.map((m) =>
               m.id === openAddAssignment
-                ? { ...m, assignment_id: `a-${Date.now()}` }
+                ? { ...m, assignment_id: created?.id ?? `a-${Date.now()}` }
                 : m
             )
           );
+          if (created) {
+            setAssignments((prev) => [
+              { ...created, submissions: created.submissions ?? [] },
+              ...prev,
+            ]);
+          }
+          notify("assignment_created", {
+            title: created?.title ?? "New assignment",
+          });
         }}
+      />
+      <EditAssignmentModal
+        isOpen={!!editingAssignment}
+        assignment={editingAssignment}
+        onClose={() => setEditingAssignment(null)}
+        onSuccess={handleAssignmentUpdated}
       />
       <AssignmentReviewModal
         isOpen={!!reviewing}
@@ -316,6 +385,21 @@ export default function AdminCourseEditorPage() {
         submission={reviewing?.submission}
         onClose={() => setReviewing(null)}
         onReviewed={handleReviewed}
+      />
+
+      <EditLessonModal
+        lesson={editingLesson}
+        onClose={() => setEditingLesson(null)}
+        onSaved={handleLessonSaved}
+      />
+      <LessonPreviewModal
+        lesson={previewingLesson}
+        onClose={() => setPreviewingLesson(null)}
+      />
+      <DeleteLessonModal
+        lesson={deletingLesson}
+        onClose={() => setDeletingLesson(null)}
+        onDeleted={handleLessonDeleted}
       />
     </motion.div>
   );
@@ -430,7 +514,14 @@ function CourseHeader({
                 : "bg-[#10B981] text-white hover:bg-[#059669]"
             }`}
           >
-            {course.is_published ? "Unpublish" : "Publish ✓"}
+            {course.is_published ? (
+              "Unpublish"
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                Publish
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -451,7 +542,11 @@ function ModuleRow({
   onAddLesson,
   onAddQuiz,
   onAddAssignment,
+  onEditAssignment,
   onReview,
+  onEditLesson,
+  onPreviewLesson,
+  onDeleteLesson,
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -542,6 +637,30 @@ function ModuleRow({
                         <span className="flex-1 truncate text-[var(--text-primary)]">
                           {l.title}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => onEditLesson?.(l)}
+                          title="Edit lesson"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onPreviewLesson?.(l)}
+                          title="Preview as student"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteLesson?.(l)}
+                          title="Delete lesson"
+                          className="grid h-7 w-7 place-items-center rounded-lg text-red-500 transition-colors hover:bg-red-500/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -583,10 +702,28 @@ function ModuleRow({
                     Assignment
                   </h4>
                   {assignment ? (
-                    <p className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--text-primary)]">
-                      <ClipboardList className="h-3.5 w-3.5 text-amber-500" />
-                      {assignment.title}
-                    </p>
+                    <div className="flex flex-col gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="inline-flex min-w-0 items-start gap-2 text-xs font-bold text-[var(--text-primary)]">
+                          <ClipboardList className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                          <span className="break-words">{assignment.title}</span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => onEditAssignment?.(assignment)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[#10B981] hover:text-[#10B981]"
+                          title="Edit assignment"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </button>
+                      </div>
+                      {assignment.deadline && (
+                        <p className="text-[11px] text-[var(--text-secondary)] font-mono-ui">
+                          Due {assignment.deadline}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <button
                       type="button"

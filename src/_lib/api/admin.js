@@ -32,6 +32,9 @@ export const assignInstructor = (data) =>
 export const createUser = (data) =>
   apiClient.post("/admin/users", data).then((r) => r.data);
 
+export const getNextAdmissionNo = () =>
+  apiClient.get("/admin/next-admission-no").then((r) => r.data);
+
 export const createCourse = (data) =>
   apiClient.post("/admin/courses", data).then((r) => r.data);
 
